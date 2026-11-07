@@ -130,3 +130,121 @@ Recommended next milestone: recoverable OIDC identity and project access before 
 ## November 7, 2026 — source-control handoff
 
 The owner explicitly requested committing and pushing the completed milestone. Preparing the initial repository snapshot on feat/project-foundation, including the original planning baseline and implementation. Remote origin is https://github.com/teaBag024/ComPlix.git; the remote head check returned no branches. Reviewed all 34 candidate files and checked for private-key/JWT/GitHub-token patterns with no matches; ignored runtime credentials, local data and downloaded tools remain excluded. Prior build and four-test acceptance evidence still applies; no application changes were made for this handoff. Publication outcome is reported in the handoff message.
+
+
+## November 7, 2026 — Spacetime agent integration setup
+
+User requested the official agent setup workflow and full current misconceptions page. Read the full setup guide and misconceptions Markdown source, the Zen page, and the recommended introductory essays. Inspected existing configuration and preserved the organization-access changes already in progress.
+
+Installed/enabled spacetimedb@spacetimedb-plugins 0.1.0 from the official clockworklabs/SpacetimeDB Git marketplace, using Codex CLI. User-level install: C:/Users/Lilian/.codex/plugins/cache/spacetimedb-plugins/spacetimedb/0.1.0. Verified bundled concepts, cli, mcp, TypeScript server/client and other language skills plus the MCP manifest. No duplicate Spacetime skills found under ~/.agents/skills. Claude CLI and ~/.cursor were absent, so no integrations were installed for those agents.
+
+Verified existing PATH CLI 2.14.1 and spacetime mcp --help, matching the project's pinned 2.14.1 SDK. codex plugin list reports installed/enabled and codex mcp list reports the stdio registration (spacetime mcp). Existing Maincloud default and local server entry were preserved; no database scope override/project spacetime.json exists. No login, server start, publication, schema/data inspection, SQL or reducer calls were performed for setup. Application source and dependency versions were unchanged by setup.
+
+Status: PARTIAL until Codex is reloaded. New MCP tools/skills are not exposed in the current live session, so no MCP connection/ping is claimed. After reload, confirm the intended server (ComPlix development is local; current global default is Maincloud), inspect tools and verify only ping. No write-approval bypass was configured.
+
+Sources: https://spacetimedb.com/agent-setup.md and https://spacetimedb.com/docs/intro/misconceptions/. Future capability descriptions must use current official docs and the installed SDK/bindings, including procedures, module environment variables, scheduled work, files and typed views; an external service is not automatically required for these capabilities. Existing broader architecture recommendations remain proposals, not platform limitations.
+
+
+## November 7, 2026 — sign-in and organization implementation
+
+Implemented on feat/organization-access:
+- OIDC authorization-code/PKCE integration using the supplied public SpacetimeAuth client, session storage, sign-out and expiry cleanup. No client secret or credential-debug output.
+- Verified profile registration and issuer/audience/expiry/verified-email guards at admission and mutations.
+- Organizations, multiple memberships, one project per organization, owner/admin management and editor/viewer grants.
+- Organization switching, project creation/rename, incoming/outgoing in-app invitations, acceptance/revocation, role/access controls and member removal in the React UI.
+- Private backing tables/caller views; subscription-driven sharing and immediate grant/membership revocation.
+- Original-schema preservation and explicit, expiring, old-token-authorized transfer to an authenticated organization manager.
+- README setup/auth/migration/test commands, public .env.example, accepted decisions and system plan v1.3. Original four product planning documents preserved.
+
+Validation actually run:
+- Backend build and binding generation passed with CLI/server/SDK 2.14.1.
+- Frontend/module strict typechecks and Vite production build passed.
+- Final npm.cmd test: 5 passed in 21.0 seconds, exit 0. The suite uses isolated local server/data and signed identity fixtures, plus seeded browser OIDC sessions.
+- Checks include missing/unverified/expired/wrong-audience credentials, denied wrong-audience HTTP read, scoped reads, invalid/duplicate project creation, invitation recipient validation/single acceptance/revocation, owner protections, denied privilege escalation, editor sharing, viewer write denial, grant removal and membership removal with live subscription retraction.
+- Migration test publishes the original schema fixture, creates a legacy project, upgrades with --delete-data=never, proves old-token possession is required, imports atomically, rejects replay and verifies persistence after server restart.
+- Chromium tests include organization switching and both profile choices, same-identity reload, shared edits across separate identities, viewer UI, removal hiding data, connection failure/retry and sign-out clearing the workspace.
+- git diff --check passed (line-ending notices only). Changed-file private-key/JWT/GitHub-token pattern scan found no matches; runtime keys/data remain ignored. This is a limited pattern check, not a general secret-audit guarantee.
+
+Live configuration/route checks:
+- Read only public settings with spacetime auth client get complix-dev, without --include-secret. Registered redirect/logout URIs match 127.0.0.1:5173.
+- Public OIDC discovery works; rendered hosted login shows Google and GitHub icons plus email magic link. Anonymous login is also enabled there; the application rejects it for organization access. Recommend disabling it in the auth dashboard.
+- Google navigation reaches accounts.google.com with no observed OAuth configuration error before login. No credentials were entered and no provider consent was granted.
+- Owner reported invalid_redirect_uri on a real attempt. Registration itself was verified correct. Added a canonical origin redirect before OIDC and verified localhost redirects to 127.0.0.1 and reaches Google. Real callback completion after this fix is pending the owner's retry.
+
+The local server/frontend had stopped during the session; restarted them and successfully published the validated module to complix-local on 127.0.0.1:3000 without deleting data. Current app: http://127.0.0.1:5173. No Maincloud application module update, paid resource creation, commit or push was performed in this increment.
+
+Remaining/unverified:
+- Full Google/GitHub/email authorization-code exchange with real accounts, callback, return sign-in, provider renewal/logout and cross-provider linking. These are not proven by seeded sessions or reaching the provider page.
+- Invitation email delivery is deliberately absent; invites are in-app. Seven-day invitation and ten-minute transfer TTL boundary/expiry-clock tests are not run.
+- No ownership transfer, account-merging UI, production hardening, browser matrix, formal accessibility/load audit or immediate provider-token revocation guarantee.
+- The full auth milestone remains pending real-provider acceptance; local organization/access implementation is validated. Component generation, questionnaires, workers, uploads, exports and previews remain outside this increment.
+
+## Tab session renewal — November 7, 2026
+
+Owner confirmed successful Google login and Google-to-GitHub invitations; this supersedes the earlier pending reports for those flows. Owner then reported early logout. The frontend omitted offline_access, preventing it from requesting refresh credentials. Added that scope, kept automatic refresh, explicitly placed PKCE state in sessionStorage alongside the user session, and prevented renewal errors from discarding still-valid credentials. Backend expiry checks remain unchanged.
+
+Validation: frontend/module typechecks and Vite production build passed. Final npm.cmd test completed successfully: 6 passed in 33.6 seconds, exit 0 (run outside the sandbox after the first run stalled during process cleanup). Checks include the new short-lived-token renewal check: same identity/workspace after original expiry, reload retained the renewed session, no OIDC localStorage entries, and a fresh browser context starts signed out. The token endpoint is mocked in this test; actual provider refresh issuance/rotation remains unverified. Public provider discovery was read successfully and advertises offline_access and refresh_token. A new real sign-in is needed to upgrade existing sessions.
+
+## Questionnaire/design guidance — November 7, 2026
+
+Owner confirmed login now works and authorized the next milestone. Implemented on the existing feature branch, preserving the uncommitted organization/authentication work:
+- Private project guidance table, editor-only revision-checked save reducer, caller-scoped live view and regenerated bindings. Existing tables/data are preserved.
+- Eight draft questionnaire/guidance fields, 700 ms autosave, saved/unsaved/saving/error states, read-only viewers and deterministic Markdown text preview.
+- Conflict protection with latest-saved comparison and explicit draft discard. Rejected saves retain text; best-effort session drafts recover across reload/reconnection. Both output profiles remain unchanged.
+- README commands, walkthrough, limits and decision/source records updated.
+
+Validation run: backend compilation/binding generation and strict frontend/module typechecks plus production build passed. Full local SDK/Chromium suite: 7 passed in 34.4 seconds, exit 0. Guidance assertions cover editor save/live viewer reads, denied viewer/outsider writes, private table/scoped-view isolation, stale revisions, oversized/control-character rejection, grant-revocation retraction, browser autosave/live updates/reload, concurrent edit conflict without overwriting local text, rejected-save recovery after reload, viewer read-only UI, and server-restart persistence. Earlier organization/authentication/migration regression checks also passed. Tests use isolated locally signed identities and seeded OIDC sessions; they do not automate real provider login.
+
+Limitations: all fields are draft text; generation readiness, compatible dependency selection, formal design-rule history/status, uploads, provider-key handling, code generation, runtime previews and exports are not implemented. Browser draft recovery requires available session storage; no offline queue, durable unsaved-work guarantee or automatic conflict merge. Next recommended milestone: settle the minimal Common inventory and one bounded generation/validation path, including AI credential and execution-isolation decisions, while retaining both required output stacks.
+
+Local handoff: backend build and data-preserving local publication passed, adding project_guidance/visible_guidance to complix-local at 127.0.0.1:3000. Existing records were preserved. Frontend http://127.0.0.1:5173 returned HTTP 200. Final production rebuild and git diff --check passed (line-ending notices only). After adding endpoint/database to draft storage isolation, the focused guidance browser test passed again: 1 passed in 19.4 seconds, exit 0. No Maincloud update, dependency installation, commit or push in this increment.
+
+## Guidance save failure follow-up — November 7, 2026
+
+Owner reported rejected autosaves and no shared updates. Read local server logs without printing tokens or draft data: save_guidance returned the original Access denied message. Added safe specific diagnostics for session expiry, edit permissions, stale revisions and invalid answers instead of hiding every cause behind the same generic alert.
+
+Fixed the renewal scheduler to use the earlier ID/access-token expiration, with transient retry and focus/visibility checks; disabled the library's separate access-token-only scheduler. Server credential expiry and project isolation checks remain intact. Updated the regression fixture so the ID token expires in five seconds but the access token in one hour, then checked renewed identity, post-expiry guidance save and delivery to a separate viewer subscription.
+
+The frontend/module build passed and the revised module was published locally with no data deletion/schema change. Owner reloaded/retried and confirmed saving now works. The previous generic logs do not independently prove which guard rejected the user's request, so the precise original denial is not claimed as forensically established. Actual real-provider long-duration refresh remains outside the mocked-token-endpoint test.
+
+Final regression result: npm.cmd test — 7 passed in 1.0 minute, exit 0. This includes saving after the shorter ID-token deadline and receiving that change through another authorized identity subscription. No commit, push or Maincloud deployment performed.
+
+## Project-model clarification — November 7, 2026 (documentation only)
+
+Owner clarified that projects can be private without an organization and can request any frameworks, languages or libraries. Multiple projects per user and sharing among organization members remain confirmed. Updated AGENTS.md, consolidated system plan v1.4, decisions and README so future work does not carry forward mandatory org ownership, one-project limits or a fixed-profile-only project model. Historical implementation decisions are preserved and explicitly superseded. Requested technology details remain distinct from verified generation capabilities; both required prototype output stacks remain required.
+
+No application code/schema changed, migrated, published, committed or pushed for this request. Current code still enforces org-only projects, one per org and two output-profile choices. Next proposed milestone is the project-model/data-preserving migration before generation; detailed ownership/association/admin policies remain open in system-plan section 22. Validation: documentation consistency review and git diff --check; application tests are not needed/run for this documentation-only update.
+
+## Private/shared multi-project milestone — November 7, 2026
+
+Completed on feat/organization-access, preserving previous uncommitted work:
+- Personally owned projects with no organization required, multiple projects per user/org, optional one-org sharing context and explicit viewer/editor grants. Organization admins have no automatic access to personal projects.
+- Open requested framework/language/styling/library/version fields, optional presets, revision-checked edits, per-project guidance and stable project selection across live updates/reloads.
+- Owner-controlled association/detachment, project-scoped grant UI, explicit initial-project invitation grants, leaving/removal cleanup and no restored grants on rejoin. Removed personal owners retain projects privately. Existing organization owners/admins retain management of historical organization-owned projects.
+- Data-preserving schema upgrade removes only organizationId uniqueness and appends defaulted ownership/technology/revision fields. Existing IDs/grants/guidance and original legacy-token rows remain. Private import still requires proof of old-token possession.
+- AGENTS, system plan v1.5, decisions and README updated with actual behavior, sources, commands and limits. No new dependencies.
+
+Validation actually run:
+- SpacetimeDB 2.14.1 compilation and generated bindings succeeded. Final strict frontend/module typechecks and Vite production build passed.
+- Final npm.cmd test: 10 passed in 42.2 seconds, exit 0. The suite publishes original legacy and preceding org-only fixture modules, seeds records/grants/guidance, upgrades with --delete-data=never, then validates preserved IDs, organizational ownership, viewer access and guidance. Tests cover multiple projects in an existing org without expanding member visibility, arbitrary Angular/MUI requests, invalid/oversized and stale technology writes, private-project isolation from org admins, explicit sharing, viewer write denial, live retraction, leaving and rejoining without restored access, owner removal retaining projects privately, separate guidance, browser creation/switching/reload and zero browser errors in the new private-project flow. Earlier login/refresh/sign-out, connection failure, guidance conflict/recovery and restart checks remain passing.
+- Earlier runs exposed a stale single-project ordering assertion and duplicate React sibling keys; fixed and reran. A later run was interrupted by development reload during the connection-retry test; the final unchanged-source run passed all checks.
+- Local publication to 127.0.0.1:3000 / complix-local succeeded with --delete-data=never; CLI showed the expected constraint removal/defaulted columns/views and disconnected older clients for the changed view schema. Reload existing browser tabs.
+- Attempted direct before/after record comparison through CLI SQL was denied by the verified-OIDC admission guard. Did not weaken authorization or read browser credentials to bypass it. Actual user-record counts were not independently compared; preservation is supported by the data-preserving publication and seeded upgrade acceptance test, not a claim of inspecting every real user's records.
+
+Remaining limitations: generation/compatibility resolution, actual generated-code previews, exports, multiple-org sharing, ownership transfer/conversion and project deletion remain unimplemented. Requested technology details are text, not a validated dependency manifest. Technology edits require explicit save and are not persisted as offline drafts; copy unsaved edits before switching. Project authorization currently scans the small private project table inside caller views; scaling/index optimization is future work. Real-account multi-project acceptance is not automated by seeded sessions. No Maincloud update, paid resource, commit or push was performed.
+
+Next recommended milestone: agree the minimal Common inventory, provider/key lifecycle and isolated build/preview approach, then implement versioned generation adapters for both required output profiles without restricting requested project technologies.
+
+## Workspace tabs � November 7, 2026
+
+Implemented on feat/workspace-tabs, preserving existing uncommitted work:
+- Six task-focused tabs: Projects, Design guidance, Technologies, Sharing, Organization, Invitations.
+- Active project/name/access stay above the tab panels; invitation counts surface pending items.
+- shadcn/ui-style Radix Tabs component under src/components/ui/tabs.tsx, adapted to existing CSS. Added @radix-ui/react-tabs; no Tailwind pipeline or backend changes.
+- Compact cards, two-column project creation/guidance on wider screens, wrapping mobile tabs and visible keyboard focus.
+- Inactive panels remain mounted so switching tabs retains technology drafts and guidance autosave. Existing project-switch recovery limits still apply.
+- Browser flows updated to navigate tabs; added assertions for a single visible panel, retained unsaved technology edits, arrow-key navigation and no horizontal page overflow at 390px.
+
+Validation: strict frontend/module typechecks and production build passed. Vite emitted Radix use-client directive warnings. npm reported the host Node 24.21.0 is below the project's declared minimum 24.22.1; dependencies installed successfully with zero reported audit vulnerabilities. Initial test run reported all 10 cases passing but stalled in process cleanup; terminated only identified test processes and reran outside the sandbox. Final rerun result follows below. No commit, push or publication.
+
+Final validation: npm.cmd test passed all 10 tests in 47.4 seconds, exit 0, including the new keyboard, hidden-panel, unsaved-draft and mobile-width assertions. A preceding rerun was interrupted by a frontend formatting reload during the connection-retry check; the final source-stable run passed that check. git diff --check passed (line-ending notices only). Formal accessibility audit and visual browser matrix were not performed.

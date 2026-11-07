@@ -10,8 +10,86 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Invitation = __t.object("Invitation", {
+  id: __t.u64(),
+  organizationId: __t.u64(),
+  email: __t.string(),
+  role: __t.string(),
+  projectId: __t.u64(),
+  projectRole: __t.string(),
+  expiresAt: __t.timestamp(),
+});
+export type Invitation = __Infer<typeof Invitation>;
+
+export const InvitationSummary = __t.object("InvitationSummary", {
+  id: __t.u64(),
+  organizationId: __t.u64(),
+  organizationName: __t.string(),
+  email: __t.string(),
+  role: __t.string(),
+  projectRole: __t.string(),
+  expiresAt: __t.timestamp(),
+});
+export type InvitationSummary = __Infer<typeof InvitationSummary>;
+
+export const LegacyTransfer = __t.object("LegacyTransfer", {
+  legacyId: __t.u64(),
+  destination: __t.identity(),
+  expiresAt: __t.timestamp(),
+  claimed: __t.bool(),
+});
+export type LegacyTransfer = __Infer<typeof LegacyTransfer>;
+
+export const ManagedProjectShares = __t.object("ManagedProjectShares", {});
+export type ManagedProjectShares = __Infer<typeof ManagedProjectShares>;
+
+export const MemberSummary = __t.object("MemberSummary", {
+  key: __t.string(),
+  organizationId: __t.u64(),
+  user: __t.identity(),
+  name: __t.string(),
+  email: __t.string(),
+  role: __t.string(),
+  projectRole: __t.string(),
+});
+export type MemberSummary = __Infer<typeof MemberSummary>;
+
+export const Membership = __t.object("Membership", {
+  key: __t.string(),
+  organizationId: __t.u64(),
+  user: __t.identity(),
+  role: __t.string(),
+});
+export type Membership = __Infer<typeof Membership>;
+
+export const MyInvitations = __t.object("MyInvitations", {});
+export type MyInvitations = __Infer<typeof MyInvitations>;
+
+export const MyOrganizations = __t.object("MyOrganizations", {});
+export type MyOrganizations = __Infer<typeof MyOrganizations>;
+
+export const MyProfile = __t.object("MyProfile", {});
+export type MyProfile = __Infer<typeof MyProfile>;
+
 export const MyProject = __t.object("MyProject", {});
 export type MyProject = __Infer<typeof MyProject>;
+
+export const Organization = __t.object("Organization", {
+  id: __t.u64(),
+  name: __t.string(),
+  owner: __t.identity(),
+});
+export type Organization = __Infer<typeof Organization>;
+
+export const OrganizationMembers = __t.object("OrganizationMembers", {});
+export type OrganizationMembers = __Infer<typeof OrganizationMembers>;
+
+export const OrganizationSummary = __t.object("OrganizationSummary", {
+  id: __t.u64(),
+  name: __t.string(),
+  role: __t.string(),
+});
+export type OrganizationSummary = __Infer<typeof OrganizationSummary>;
 
 export const Project = __t.object("Project", {
   id: __t.u64(),
@@ -20,4 +98,81 @@ export const Project = __t.object("Project", {
   outputStack: __t.string(),
 });
 export type Project = __Infer<typeof Project>;
+
+export const ProjectAccess = __t.object("ProjectAccess", {
+  key: __t.string(),
+  projectId: __t.u64(),
+  user: __t.identity(),
+  role: __t.string(),
+});
+export type ProjectAccess = __Infer<typeof ProjectAccess>;
+
+export const ProjectGuidance = __t.object("ProjectGuidance", {
+  projectId: __t.u64(),
+  revision: __t.u64(),
+  audience: __t.string(),
+  technical: __t.string(),
+  style: __t.string(),
+  colors: __t.string(),
+  typography: __t.string(),
+  spacing: __t.string(),
+  accessibility: __t.string(),
+  guidance: __t.string(),
+});
+export type ProjectGuidance = __Infer<typeof ProjectGuidance>;
+
+export const ProjectShareSummary = __t.object("ProjectShareSummary", {
+  key: __t.string(),
+  projectId: __t.u64(),
+  user: __t.identity(),
+  role: __t.string(),
+});
+export type ProjectShareSummary = __Infer<typeof ProjectShareSummary>;
+
+export const ProjectSummary = __t.object("ProjectSummary", {
+  id: __t.u64(),
+  organizationId: __t.u64(),
+  name: __t.string(),
+  outputStack: __t.string(),
+  permission: __t.string(),
+  owner: __t.identity(),
+  canManage: __t.bool(),
+  ownership: __t.string(),
+  framework: __t.string(),
+  language: __t.string(),
+  styling: __t.string(),
+  libraries: __t.string(),
+  versions: __t.string(),
+  revision: __t.u64(),
+});
+export type ProjectSummary = __Infer<typeof ProjectSummary>;
+
+export const UserProfile = __t.object("UserProfile", {
+  identity: __t.identity(),
+  email: __t.string(),
+  name: __t.string(),
+});
+export type UserProfile = __Infer<typeof UserProfile>;
+
+export const VisibleGuidance = __t.object("VisibleGuidance", {});
+export type VisibleGuidance = __Infer<typeof VisibleGuidance>;
+
+export const VisibleProjects = __t.object("VisibleProjects", {});
+export type VisibleProjects = __Infer<typeof VisibleProjects>;
+
+export const WorkspaceProject = __t.object("WorkspaceProject", {
+  id: __t.u64(),
+  organizationId: __t.u64(),
+  name: __t.string(),
+  outputStack: __t.string(),
+  createdBy: __t.identity(),
+  ownership: __t.string(),
+  framework: __t.string(),
+  language: __t.string(),
+  styling: __t.string(),
+  libraries: __t.string(),
+  versions: __t.string(),
+  revision: __t.u64(),
+});
+export type WorkspaceProject = __Infer<typeof WorkspaceProject>;
 

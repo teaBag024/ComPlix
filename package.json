@@ -17,8 +17,11 @@
     "backend:generate": "node scripts/backend.mjs generate"
   },
   "dependencies": {
+    "@radix-ui/react-tabs": "^1.2.1",
+    "oidc-client-ts": "3.5.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-oidc-context": "3.3.1",
     "spacetimedb": "2.14.1"
   },
   "devDependencies": {

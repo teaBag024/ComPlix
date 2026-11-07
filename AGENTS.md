@@ -28,7 +28,13 @@ open, and future. Do not silently treat proposals as approved decisions.
 ## Product requirements
 - Generate components and compositions, not complete applications.
 - Generate a reusable Common foundation before composing larger components.
-- Each client project has one output stack and an isolated component library.
+- Users may have multiple projects. A project can be private without an organization.
+  Projects can also be shared with organization members through project-specific access.
+  Organization association is optional; do not impose one-project-per-user/org limits.
+- Each project records its requested framework(s), language(s), styling, libraries,
+  and relevant versions, with its own isolated component library and design guidance.
+  Technology choices are open-ended, not restricted to a fixed profile dropdown.
+  Distinguish requested technologies from tested generation/build/preview support.
 - Both prototype output profiles are required:
   - React + TypeScript + Tailwind + shadcn/ui.
   - Blazor + Bootstrap.
@@ -36,8 +42,14 @@ open, and future. Do not silently treat proposals as approved decisions.
 - SpacetimeDB is the selected backend direction (November 7, 2026).
   Flask + SQLite and the possible PostgreSQL path are superseded history.
   The first milestone uses a TypeScript module and local standalone server.
-  Browser-retained development identities are local-only; hosted authentication
-  and external worker/storage tooling remain open. Consult the system plan.
+  Sign-in uses SpacetimeAuth OIDC. New projects are personally owned with optional
+  sharing through one organization and explicit viewer/editor grants; organization
+  admins have no implicit access to personal projects. Departure removes grants;
+  rejoining does not restore them. Departing personal owners retain their projects
+  privately. Existing organization-owned projects retain their historical access
+  during data-preserving migration; do not silently convert ownership.
+  Legacy development identities are retained only for project transfer.
+  External worker/storage tooling remains open. Consult the system plan.
 - Preview actual generated code for both supported output profiles.
 - Maintain evolving project design guidance.
 - Autosave drafts; promote successful changes only after required checks pass.

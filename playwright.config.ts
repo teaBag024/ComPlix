@@ -22,6 +22,6 @@ export default defineConfig({
     command: 'node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
-    env: { VITE_SPACETIME_URI: 'http://127.0.0.1:3100', VITE_SPACETIME_DATABASE: 'complix-test' },
+    env: { VITE_SPACETIME_URI: 'http://127.0.0.1:3100', VITE_SPACETIME_DATABASE: 'complix-test', VITE_AUTH_REDIRECT_ORIGIN: 'http://127.0.0.1:4173' },
   },
 });

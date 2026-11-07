@@ -34,18 +34,68 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptInvitationReducer from "./accept_invitation_reducer";
+import CreateOrganizationReducer from "./create_organization_reducer";
 import CreateProjectReducer from "./create_project_reducer";
+import CreateProjectWithDetailsReducer from "./create_project_with_details_reducer";
+import ImportLegacyProjectReducer from "./import_legacy_project_reducer";
+import InviteMemberReducer from "./invite_member_reducer";
+import LeaveOrganizationReducer from "./leave_organization_reducer";
+import PrepareLegacyTransferReducer from "./prepare_legacy_transfer_reducer";
+import RegisterProfileReducer from "./register_profile_reducer";
+import RemoveMemberReducer from "./remove_member_reducer";
 import RenameProjectReducer from "./rename_project_reducer";
+import RevokeInvitationReducer from "./revoke_invitation_reducer";
+import SaveGuidanceReducer from "./save_guidance_reducer";
+import SetMemberRoleReducer from "./set_member_role_reducer";
+import SetProjectAccessReducer from "./set_project_access_reducer";
+import SetProjectOrganizationReducer from "./set_project_organization_reducer";
+import UpdateProjectDetailsReducer from "./update_project_details_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import ManagedProjectSharesRow from "./managed_project_shares_table";
+import MyInvitationsRow from "./my_invitations_table";
+import MyOrganizationsRow from "./my_organizations_table";
+import MyProfileRow from "./my_profile_table";
 import MyProjectRow from "./my_project_table";
+import OrganizationMembersRow from "./organization_members_table";
+import VisibleGuidanceRow from "./visible_guidance_table";
+import VisibleProjectsRow from "./visible_projects_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  managedProjectShares: __table({
+    name: 'managed_project_shares',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ManagedProjectSharesRow),
+  myInvitations: __table({
+    name: 'my_invitations',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyInvitationsRow),
+  myOrganizations: __table({
+    name: 'my_organizations',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyOrganizationsRow),
+  myProfile: __table({
+    name: 'my_profile',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyProfileRow),
   myProject: __table({
     name: 'my_project',
     indexes: [
@@ -53,12 +103,48 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyProjectRow),
+  organizationMembers: __table({
+    name: 'organization_members',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, OrganizationMembersRow),
+  visibleGuidance: __table({
+    name: 'visible_guidance',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleGuidanceRow),
+  visibleProjects: __table({
+    name: 'visible_projects',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleProjectsRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("accept_invitation", AcceptInvitationReducer),
+  __reducerSchema("create_organization", CreateOrganizationReducer),
   __reducerSchema("create_project", CreateProjectReducer),
+  __reducerSchema("create_project_with_details", CreateProjectWithDetailsReducer),
+  __reducerSchema("import_legacy_project", ImportLegacyProjectReducer),
+  __reducerSchema("invite_member", InviteMemberReducer),
+  __reducerSchema("leave_organization", LeaveOrganizationReducer),
+  __reducerSchema("prepare_legacy_transfer", PrepareLegacyTransferReducer),
+  __reducerSchema("register_profile", RegisterProfileReducer),
+  __reducerSchema("remove_member", RemoveMemberReducer),
   __reducerSchema("rename_project", RenameProjectReducer),
+  __reducerSchema("revoke_invitation", RevokeInvitationReducer),
+  __reducerSchema("save_guidance", SaveGuidanceReducer),
+  __reducerSchema("set_member_role", SetMemberRoleReducer),
+  __reducerSchema("set_project_access", SetProjectAccessReducer),
+  __reducerSchema("set_project_organization", SetProjectOrganizationReducer),
+  __reducerSchema("update_project_details", UpdateProjectDetailsReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
