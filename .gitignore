@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.tools/
+.local/
+.env*
+!.env.example
+test-results/
+playwright-report/
+spacetimedb/dist/

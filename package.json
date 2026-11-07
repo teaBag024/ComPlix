@@ -1,0 +1,31 @@
+{
+  "name": "complix",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p spacetimedb/tsconfig.json",
+    "build": "npm run typecheck && vite build",
+    "test": "playwright test",
+    "backend:start": "node scripts/backend.mjs start",
+    "backend:build": "node scripts/backend.mjs build",
+    "backend:publish": "node scripts/backend.mjs publish",
+    "backend:generate": "node scripts/backend.mjs generate"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "spacetimedb": "2.14.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.6"
+  }
+}
