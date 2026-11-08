@@ -169,6 +169,40 @@ export type GenerationJob = __Infer<typeof GenerationJob>;
 export const GenerationSettings = __t.object("GenerationSettings", {});
 export type GenerationSettings = __Infer<typeof GenerationSettings>;
 
+export const ImportExpiry = __t.object("ImportExpiry", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  projectId: __t.u64(),
+  requestId: __t.string(),
+});
+export type ImportExpiry = __Infer<typeof ImportExpiry>;
+
+export const ImportRecord = __t.object("ImportRecord", {
+  key: __t.string(),
+  projectId: __t.u64(),
+  requestId: __t.string(),
+  digest: __t.string(),
+  componentCount: __t.u32(),
+  referenceCount: __t.u32(),
+  importedBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type ImportRecord = __Infer<typeof ImportRecord>;
+
+export const ImportStaging = __t.object("ImportStaging", {
+  key: __t.string(),
+  projectId: __t.u64(),
+  requestId: __t.string(),
+  sequence: __t.u32(),
+  chunkCount: __t.u32(),
+  totalBytes: __t.u64(),
+  digest: __t.string(),
+  uploadedBy: __t.identity(),
+  bytes: __t.byteArray(),
+  createdAt: __t.timestamp(),
+});
+export type ImportStaging = __Infer<typeof ImportStaging>;
+
 export const Invitation = __t.object("Invitation", {
   id: __t.u64(),
   organizationId: __t.u64(),
@@ -397,6 +431,9 @@ export type VisibleGenerationJobs = __Infer<typeof VisibleGenerationJobs>;
 
 export const VisibleGuidance = __t.object("VisibleGuidance", {});
 export type VisibleGuidance = __Infer<typeof VisibleGuidance>;
+
+export const VisibleImports = __t.object("VisibleImports", {});
+export type VisibleImports = __Infer<typeof VisibleImports>;
 
 export const VisibleProjects = __t.object("VisibleProjects", {});
 export type VisibleProjects = __Infer<typeof VisibleProjects>;

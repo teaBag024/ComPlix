@@ -89,7 +89,7 @@ async function connect(token: string, register = true): Promise<Session> {
           ctx.subscriptionBuilder().onApplied(() => {
             clearTimeout(timeout); resolve({ conn: ctx, token });
           }).onError(() => { clearTimeout(timeout); reject(new Error('Subscription denied')); })
-            .subscribe(register ? [tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponents, tables.visibleComponentChat, tables.visibleStarterTasks, tables.visibleEditorInstructions, tables.generationSettings] : tables.myProject);
+            .subscribe(register ? [tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponents, tables.visibleComponentChat, tables.visibleStarterTasks, tables.visibleEditorInstructions, tables.generationSettings, tables.visibleImports] : tables.myProject);
         };
         void initialize().catch(() => { clearTimeout(timeout); reject(new Error('Profile denied')); });
       }).onConnectError(() => { clearTimeout(timeout); reject(new Error('Connection denied')); })
@@ -1601,8 +1601,8 @@ test('project setup requires input and generates starter components server-side 
   const find = () => [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Starter project')!;
   const projectId = find().id;
   expect(find().setupState).toBe('setup');
-  await expect(owner.conn.reducers.startStarterLibrary({ projectId, starterIds: ['button'] })).rejects.toThrow('Answer the questionnaire or upload at least one document');
-  await expect(owner.conn.reducers.finishProjectSetup({ projectId })).rejects.toThrow('Answer the questionnaire or upload at least one document');
+  await expect(owner.conn.reducers.startStarterLibrary({ projectId, starterIds: ['button'] })).rejects.toThrow('Answer the questionnaire, upload at least one document or import components');
+  await expect(owner.conn.reducers.finishProjectSetup({ projectId })).rejects.toThrow('Answer the questionnaire, upload at least one document or import components');
   await expect(owner.conn.reducers.saveQuestionnaire({ projectId, expectedRevision: 0n, answers: '{"theme":"Neon"}' })).rejects.toThrow('Questionnaire answers are invalid');
   await expect(outsider.conn.reducers.saveQuestionnaire({ projectId, expectedRevision: 0n, answers: '{"theme":"Dark"}' })).rejects.toThrow('Project edit access is required.');
   await owner.conn.reducers.saveQuestionnaire({ projectId, expectedRevision: 0n, answers: JSON.stringify({ theme: 'Dark', primaryColor: '#123ABC', corners: 'Rounded (8px)' }) });
@@ -2087,4 +2087,107 @@ test('removed guidance page redirects to Components and retains saved generation
   const snapshot = await owner.conn.procedures.prepareLibraryExport({ projectId: project.id });
   expect(snapshot.guidance).toContainEqual({ label: 'guidance', content: 'Keep the saved rules' });
   await context.close();
+});
+
+// ---- Existing-component import (staged upload, atomic finalize) ----
+async function importPayloadFixture(pdfBytes: Uint8Array) {
+  const { createLibraryZip } = await import('../shared/libraryExport');
+  const { planImportFromZip, planToPayload } = await import('../shared/componentImport');
+  const archive = await createLibraryZip({ exportedAt: '2026-11-08T12:00:00.000Z', project: { id: '1', name: 'Old lib', revision: '1', ...reactStack },
+    guidance: [{ label: 'colors', content: 'Archived sage.' }], warnings: [], components: [
+      { id: '2', name: 'ImportedButton', category: 'common', rootPath: 'Common/ImportedButton', jobId: '5', revision: '3', model: 'x', origin: 'generated', files: [
+        { path: 'Common/ImportedButton/ImportedButton.tsx', content: '// @complix make this button blue\nexport function ImportedButton() { return <button>Old</button>; }\n' },
+        { path: 'Common/ImportedButton/README.md', content: '# ImportedButton\n' }] },
+      { id: '3', name: 'Button', category: 'composition', rootPath: 'Compositions/Button', jobId: '6', revision: '0', model: 'x', origin: 'generated', files: [
+        { path: 'Compositions/Button/Button.tsx', content: 'export function Button() { return <div />; }\n' }] },
+    ], references: [{ id: '9', filename: 'big-guide.pdf', purpose: 'design', bytes: pdfBytes, content: 'Archived PDF text' }] });
+  const { encodeImportPayload, sha256Hex, chunkImportPayload } = await import('../shared/importPayload');
+  const encoded = encodeImportPayload(planToPayload(await planImportFromZip(archive.bytes)));
+  return { encoded, digest: sha256Hex(encoded), chunks: chunkImportPayload(encoded) };
+}
+
+test('component import stages chunks, finalizes atomically, satisfies setup and stays inert and editable', async () => {
+  const owner = await connect(await makeToken('import-owner@example.test', 'Import Owner'));
+  const outsider = await connect(await makeToken('import-outsider@example.test', 'Import Outsider'));
+  await owner.conn.reducers.createSetupProject({ name: 'Import project', organizationId: 0n, ...reactStack });
+  const project = () => [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Import project')!;
+  const projectId = project().id;
+  // A ~1.5 MiB PDF forces a multi-chunk upload.
+  const pdf = new Uint8Array(1_500_000).fill(32); pdf.set(new TextEncoder().encode('%PDF-1.4\n'));
+  const { encoded, digest, chunks } = await importPayloadFixture(pdf);
+  expect(chunks.length).toBeGreaterThan(1);
+  const requestId = randomUUID();
+  const send = (session: Session, sequence: number, bytes = chunks[sequence], overrides: Record<string, unknown> = {}) => session.conn.reducers.appendImportChunk({
+    projectId, requestId, sequence, chunkCount: chunks.length, totalBytes: BigInt(encoded.length), digest, bytes, ...overrides });
+
+  await expect(owner.conn.reducers.finishProjectSetup({ projectId })).rejects.toThrow('import components');
+  await expect(send(outsider, 0)).rejects.toThrow('Project edit access is required.');
+  await expect(send(owner, 0, chunks[0], { requestId: 'bad id!' })).rejects.toThrow('Invalid import request.');
+  await expect(send(owner, 0, new Uint8Array(1024 * 1024 + 1))).rejects.toThrow('invalid or too large');
+  await send(owner, 0);
+  await send(owner, 0); // identical re-send is a no-op
+  await expect(send(owner, 0, chunks[1])).rejects.toThrow('different chunk');
+  await expect(send(owner, 1, chunks[1], { digest: '0'.repeat(64) })).rejects.toThrow('request changed');
+  await expect(owner.conn.reducers.finalizeImport({ projectId, requestId })).rejects.toThrow('incomplete');
+  for (let sequence = 1; sequence < chunks.length; sequence++) await send(owner, sequence);
+  await expect(outsider.conn.reducers.finalizeImport({ projectId, requestId })).rejects.toThrow('Project edit access is required.');
+  await owner.conn.reducers.finalizeImport({ projectId, requestId });
+  await owner.conn.reducers.finalizeImport({ projectId, requestId }); // replay returns the accepted result
+  await send(owner, 0); // late re-send after acceptance is a no-op
+  await expect(send(owner, 0, chunks[0], { digest: 'f'.repeat(64) })).rejects.toThrow('already used for different content');
+
+  const components = [...owner.conn.db.visibleComponents.iter()].filter(row => row.projectId === projectId);
+  expect(components.map(row => [row.name, row.rootPath]).sort()).toEqual([['Button', 'Compositions/Button'], ['ImportedButton', 'Common/ImportedButton']]);
+  const jobs = [...owner.conn.db.visibleGenerationJobs.iter()].filter(row => row.projectId === projectId);
+  expect(jobs).toHaveLength(2);
+  expect(jobs.every(row => row.mode === 'imported' && row.state === 'draft_ready' && row.model === '' && row.diagnostic.includes('Imported source'))).toBe(true);
+  const references = [...owner.conn.db.visibleReferences.iter()].filter(row => row.projectId === projectId);
+  expect(references.map(row => row.filename).sort()).toEqual(['big-guide.pdf', 'design.md']);
+  expect([...references.find(row => row.filename === 'big-guide.pdf')!.bytes]).toEqual([...pdf]);
+  expect(references.find(row => row.filename === 'design.md')!.content).toContain('Archived sage.');
+  expect([...owner.conn.db.visibleImports.iter()].filter(row => row.projectId === projectId)).toMatchObject([{ componentCount: 2, referenceCount: 2 }]);
+  expect([...outsider.conn.db.visibleImports.iter()]).toHaveLength(0);
+  expect(project().framework).toBe('React'); // intake technologies are untouched
+
+  // Starters may not reuse an imported name; imports alone satisfy setup.
+  await expect(owner.conn.reducers.startStarterLibrary({ projectId, starterIds: ['button'] })).rejects.toThrow('Imported component Button already exists');
+  await owner.conn.reducers.finishProjectSetup({ projectId });
+  await expect.poll(() => project().setupState).toBe('ready');
+  await expect(send(owner, 0, chunks[0], { requestId: randomUUID() })).rejects.toThrow('only be imported during project setup');
+
+  // Imported source is editable; the inherited @complix marker stays inert through an unrelated save.
+  const job = jobs.find(row => row.componentId === components.find(item => item.name === 'ImportedButton')!.id)!;
+  const files = JSON.parse(job.artifacts).files as Array<{ path: string; content: string }>;
+  await owner.conn.reducers.saveComponentDraft({ jobId: job.id, expectedRevision: 0n, files: files.map(file => file.path.endsWith('.tsx') ? { ...file, content: file.content.replace('Old', 'Edited') } : file) });
+  expect([...owner.conn.db.visibleComponentDrafts.iter()].find(row => row.jobId === job.id)?.revision).toBe(1n);
+  expect([...owner.conn.db.visibleEditorInstructions.iter()].filter(row => row.projectId === projectId)).toHaveLength(0);
+  const snapshot = await owner.conn.procedures.prepareLibraryExport({ projectId });
+  expect(snapshot.components.map(row => row.origin)).toEqual(['imported', 'imported']);
+});
+
+test('component import rolls back on conflicts, keeps staging for retry and rejects tampered uploads', async () => {
+  const owner = await connect(await makeToken('import-retry@example.test', 'Import Retry'));
+  await owner.conn.reducers.createSetupProject({ name: 'Import retry', organizationId: 0n, ...reactStack });
+  const projectId = [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Import retry')!.id;
+  await owner.conn.reducers.uploadReference({ projectId, filename: 'DESIGN.md', purpose: 'design', bytes: new TextEncoder().encode('Intake upload') });
+  const pdf = new Uint8Array(2000).fill(32); pdf.set(new TextEncoder().encode('%PDF-1.4\n'));
+  const { encoded, digest, chunks } = await importPayloadFixture(pdf);
+  const upload = async (requestId: string, declared = digest) => {
+    for (let sequence = 0; sequence < chunks.length; sequence++) await owner.conn.reducers.appendImportChunk({ projectId, requestId, sequence, chunkCount: chunks.length, totalBytes: BigInt(encoded.length), digest: declared, bytes: chunks[sequence] });
+  };
+  const tampered = randomUUID();
+  await upload(tampered, 'a'.repeat(64));
+  await expect(owner.conn.reducers.finalizeImport({ projectId, requestId: tampered })).rejects.toThrow('checksum');
+  const requestId = randomUUID();
+  await upload(requestId);
+  await expect(owner.conn.reducers.finalizeImport({ projectId, requestId })).rejects.toThrow('already exists');
+  // Nothing from the failed attempt was inserted.
+  expect([...owner.conn.db.visibleComponents.iter()].filter(row => row.projectId === projectId)).toHaveLength(0);
+  expect([...owner.conn.db.visibleReferences.iter()].filter(row => row.projectId === projectId).map(row => row.filename)).toEqual(['DESIGN.md']);
+  // Resolve the conflict, then finish from the retained staging without re-uploading.
+  await owner.conn.reducers.removeReference({ referenceId: [...owner.conn.db.visibleReferences.iter()].find(row => row.projectId === projectId)!.id });
+  await owner.conn.reducers.finalizeImport({ projectId, requestId });
+  expect([...owner.conn.db.visibleComponents.iter()].filter(row => row.projectId === projectId)).toHaveLength(2);
+  await owner.conn.reducers.cancelImport({ projectId, requestId: tampered });
+  await expect(owner.conn.reducers.finalizeImport({ projectId, requestId: tampered })).rejects.toThrow('No uploaded import data');
 });

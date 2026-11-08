@@ -4,7 +4,8 @@ import { validateDraftFiles } from '../../shared/draftFiles';
 import { detectEditorInstructions, type EditorInstruction } from '../../shared/editorInstructions';
 import { previewKind, previewMessages, previewUrl, withPreviewEntry, startSandboxBuild, PREVIEW_IDLE_SECONDS } from '../../shared/sandboxPreview';
 import { NVIDIA_MODEL } from '../../shared/nvidiaDraft';
-import { generationStages, MAX_GENERATION_HISTORY, mockArtifacts } from '../../shared/generationWorkflow';
+import { generationStages, MAX_GENERATION_HISTORY, mockArtifacts, isSourceDraft } from '../../shared/generationWorkflow';
+import { decodeImportPayload, importRootPath, sha256Hex, IMPORT_CHUNK_BYTES, MAX_IMPORT_CHUNKS, MAX_IMPORT_PAYLOAD_BYTES, IMPORT_REQUEST_ID, IMPORT_STAGING_TTL_MICROS } from '../../shared/importPayload';
 import { MAX_PROJECT_REFERENCES, validateReferenceFile, validatePdfReference } from '../../shared/referenceFiles';
 import { parseQuestionnaire, hasAnswers, questionnaireGuidance } from '../../shared/questionnaire';
 import { starterComponents, starterRequest } from '../../shared/starterComponents';
@@ -86,7 +87,18 @@ const editorInstruction = table({ name: 'editor_instruction' }, {
   sourceJobId: t.u64(), revision: t.u64(), path: t.string(), text: t.string(), line: t.u32(),
   state: t.string(), jobId: t.u64(), updatedBy: t.identity(), updatedAt: t.timestamp(),
 });
-const db = schema({ editorInstruction, starterTask, starterTick, componentPreview, component, componentChatMessage, project, userProfile, organization, membership, workspaceProject, projectAccess, invitation, legacyTransfer, projectGuidance, projectReference, generationJob, componentDraft, modelUsage, generationDeadline }, {
+// Existing-component import. Staging is private (no view): chunks of an untrusted, not-yet-validated
+// payload, committed only by finalizeImport in one transaction. importRecord gives replay protection.
+const importStaging = table({ name: 'import_staging' }, {
+  key: t.string().primaryKey(), projectId: t.u64().index('btree'), requestId: t.string(), sequence: t.u32(), chunkCount: t.u32(),
+  totalBytes: t.u64(), digest: t.string(), uploadedBy: t.identity(), bytes: t.array(t.u8()), createdAt: t.timestamp(),
+});
+const importRecord = table({ name: 'import_record' }, {
+  key: t.string().primaryKey(), projectId: t.u64().index('btree'), requestId: t.string(), digest: t.string(),
+  componentCount: t.u32(), referenceCount: t.u32(), importedBy: t.identity(), createdAt: t.timestamp(),
+});
+const importExpiry = table({ name: 'import_expiry' }, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), projectId: t.u64(), requestId: t.string() });
+const db = schema({ importStaging, importRecord, importExpiry, editorInstruction, starterTask, starterTick, componentPreview, component, componentChatMessage, project, userProfile, organization, membership, workspaceProject, projectAccess, invitation, legacyTransfer, projectGuidance, projectReference, generationJob, componentDraft, modelUsage, generationDeadline }, {
   env: { AUTH_ISSUER: t.string().optional(), AUTH_CLIENT_ID: t.string().optional(), GENERATION_MODE: t.string().optional(), NVIDIA_ENABLED: t.string().optional(), NVIDIA_API_KEY: t.string().optional(), NVIDIA_MODEL: t.string().optional(), GEMINI_API_KEY: t.string().optional(), GEMINI_MODEL: t.string().optional(), E2B_API_KEY: t.string().optional(), E2B_REACT_TEMPLATE: t.string().optional(), E2B_BLAZOR_TEMPLATE: t.string().optional(), PREVIEW_APP_ORIGIN: t.string().optional() },
 });
 export default db;
@@ -212,12 +224,12 @@ function editableProject(ctx: Ctx, projectId: bigint) {
   if (!target || permission(ctx, target, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
   return target;
 }
-/** Setup requires either questionnaire answers or at least one uploaded reference. */
+/** Setup requires questionnaire answers, at least one uploaded reference, or a completed component import. */
 function requireSetupInput(ctx: Ctx, projectId: bigint) {
   const saved = ctx.db.projectGuidance.projectId.find(projectId)?.questionnaire ?? '';
   let answered = false;
   try { answered = hasAnswers(parseQuestionnaire(saved)); } catch { answered = false; }
-  if (!answered && ![...ctx.db.projectReference.projectId.filter(projectId)].length) throw new SenderError('Answer the questionnaire or upload at least one document before continuing.');
+  if (!answered && ![...ctx.db.projectReference.projectId.filter(projectId)].length && ![...ctx.db.importRecord.projectId.filter(projectId)].length) throw new SenderError('Answer the questionnaire, upload at least one document or import components before continuing.');
 }
 export const saveQuestionnaire = db.reducer({ projectId: t.u64(), expectedRevision: t.u64(), answers: t.string() }, (ctx, args) => {
   const target = editableProject(ctx, args.projectId);
@@ -551,9 +563,9 @@ function queueGeneration(ctx: Ctx, args: GenerationArgs, mode = 'mock', secret =
     let reply = ''; try { reply = JSON.parse(row.artifacts).reply ?? ''; } catch { /* Legacy draft. */ }
     return { request: row.request, reply: reply.slice(0, 2000) };
   }) : [];
-  const latest = scopedHistory.filter(row => isChatMode(row.mode) && row.state === 'draft_ready').sort((a, b) => a.id > b.id ? -1 : 1).find(row => { try { return JSON.parse(row.artifacts).files?.length > 0; } catch { return false; } });
+  const latest = scopedHistory.filter(row => isSourceDraft(row.mode) && row.state === 'draft_ready').sort((a, b) => a.id > b.id ? -1 : 1).find(row => { try { return JSON.parse(row.artifacts).files?.length > 0; } catch { return false; } });
   const source = args.sourceJobId !== undefined ? ctx.db.generationJob.id.find(args.sourceJobId) : latest;
-  if (args.sourceJobId !== undefined && (!source || source.componentId !== (args.componentId ?? 0n) || source.projectId !== project.id || source.state !== 'draft_ready' || !isChatMode(source.mode) || !JSON.parse(source.artifacts).files?.length)) throw new SenderError('Selected draft is unavailable. Select a saved draft from this project.');
+  if (args.sourceJobId !== undefined && (!source || source.componentId !== (args.componentId ?? 0n) || source.projectId !== project.id || source.state !== 'draft_ready' || !isSourceDraft(source.mode) || !JSON.parse(source.artifacts).files?.length)) throw new SenderError('Selected draft is unavailable. Select a saved draft from this project.');
   const edited = source ? ctx.db.componentDraft.jobId.find(source.id) : undefined;
   if (args.sourceJobId !== undefined && (edited?.revision ?? 0n) !== args.expectedDraftRevision) throw new SenderError('Draft changed. Review the latest saved version before sending.');
   const candidateFiles = isChatMode(mode) && source ? edited?.files ?? JSON.parse(source.artifacts).files : [];
@@ -588,7 +600,7 @@ export const saveComponentDraft = db.reducer({ jobId: t.u64(), expectedRevision:
   const job = ctx.db.generationJob.id.find(args.jobId);
   const project = job ? ctx.db.workspaceProject.id.find(job.projectId) : undefined;
   if (!job || !project || permission(ctx, project, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
-  if (!isChatMode(job.mode) || job.state !== 'draft_ready' || !JSON.parse(job.artifacts).files?.length) throw new SenderError('Only generated code drafts can be edited.');
+  if (!isSourceDraft(job.mode) || job.state !== 'draft_ready' || !JSON.parse(job.artifacts).files?.length) throw new SenderError('Only saved code drafts can be edited.');
   const current = ctx.db.componentDraft.jobId.find(job.id);
   if ((current?.revision ?? 0n) !== args.expectedRevision) throw new SenderError('Draft changed. Your local edits were not overwritten.');
   let files;
@@ -630,7 +642,7 @@ export const enableEditorInstruction = db.reducer({ sourceJobId: t.u64(), expect
   const target = source ? ctx.db.workspaceProject.id.find(source.projectId) : undefined;
   if (!source || !target || !source.componentId || permission(ctx, target, ctx.sender) !== 'editor') denied();
   const draft = ctx.db.componentDraft.jobId.find(source.id);
-  if (source.state !== 'draft_ready' || !isChatMode(source.mode) || (draft?.revision ?? 0n) !== args.expectedRevision) throw new SenderError('Draft changed. Review the latest saved version before sending.');
+  if (source.state !== 'draft_ready' || !isSourceDraft(source.mode) || (draft?.revision ?? 0n) !== args.expectedRevision) throw new SenderError('Draft changed. Review the latest saved version before sending.');
   const item = detectEditorInstructions(draft?.files ?? JSON.parse(source.artifacts).files ?? []).find(item => item.key === args.instructionKey);
   if (!item) throw new SenderError('Instruction is unavailable or ambiguous.');
   const old = ctx.db.editorInstruction.key.find(`${source.componentId}:${item.key}`);
@@ -744,15 +756,15 @@ export const prepareLibraryExport = db.procedure({ projectId: t.u64() }, library
   });
   const warnings: string[] = [];
   if (jobs.some(job => !['draft_ready', 'preview_ready', 'failed', 'cancelled'].includes(job.state))) warnings.push('Generation is in progress. This export contains only completed saved drafts from this snapshot.');
-  if (jobs.some(job => !job.componentId && job.state === 'draft_ready' && isChatMode(job.mode))) warnings.push('Legacy project-level results without a component identity are not included in the component library export.');
+  if (jobs.some(job => !job.componentId && job.state === 'draft_ready' && isSourceDraft(job.mode))) warnings.push('Legacy project-level results without a component identity are not included in the component library export.');
   const components = [...tx.db.component.projectId.filter(project.id)].sort((a, b) => a.rootPath.localeCompare(b.rootPath)).flatMap(component => {
-    const source = jobs.find(job => job.componentId === component.id && job.state === 'draft_ready' && isChatMode(job.mode) && (() => { try { return JSON.parse(job.artifacts).files?.length > 0; } catch { return false; } })());
+    const source = jobs.find(job => job.componentId === component.id && job.state === 'draft_ready' && isSourceDraft(job.mode) && (() => { try { return JSON.parse(job.artifacts).files?.length > 0; } catch { return false; } })());
     if (!source) { warnings.push(`Component ${component.name} (${component.id}) has no completed source draft and was omitted.`); return []; }
     const saved = tx.db.componentDraft.jobId.find(source.id);
     const files = validateDraftFiles(saved?.files ?? JSON.parse(source.artifacts).files);
     return [{ id: component.id.toString(), name: component.name, category: component.category, rootPath: component.rootPath,
       jobId: source.id.toString(), revision: (saved?.revision ?? 0n).toString(), model: source.model,
-      origin: source.model ? 'generated' : 'starter-placeholder', files }];
+      origin: source.mode === 'imported' ? 'imported' : source.model ? 'generated' : 'starter-placeholder', files }];
   });
   if (!components.length) throw new SenderError('No saved component files are available to export.');
   const technologies = project.framework || !project.outputStack ? project : { ...project, ...presetDetails(project.outputStack) };
@@ -782,7 +794,7 @@ export const runEditorInstruction = db.procedure({ instructionId: t.u64(), expec
     if (record.revision !== args.expectedRevision) throw new SenderError('Draft changed. Review the latest saved version before sending.');
     const source = tx.db.generationJob.id.find(record.sourceJobId);
     const draft = source ? tx.db.componentDraft.jobId.find(source.id) : undefined;
-    if (!source || source.projectId !== target.id || source.componentId !== record.componentId || source.state !== 'draft_ready' || !isChatMode(source.mode) || (draft?.revision ?? 0n) !== record.revision) throw new SenderError('Selected draft is unavailable. Select a saved draft from this project.');
+    if (!source || source.projectId !== target.id || source.componentId !== record.componentId || source.state !== 'draft_ready' || !isSourceDraft(source.mode) || (draft?.revision ?? 0n) !== record.revision) throw new SenderError('Selected draft is unavailable. Select a saved draft from this project.');
     const item = detectEditorInstructions(draft?.files ?? JSON.parse(source.artifacts).files ?? []).find(item => `${source.componentId}:${item.key}` === record.key);
     if (!item) throw new SenderError('Instruction is unavailable or ambiguous.');
     const { geminiKey, geminiModel, nvidiaKey, nvidiaModel } = chatCredentials(tx);
@@ -906,6 +918,9 @@ export const startStarterLibrary = db.reducer({ projectId: t.u64(), starterIds: 
   const chosen = starterComponents.filter(item => args.starterIds.includes(item.id));
   if (!chosen.length || chosen.length !== new Set(args.starterIds).size) throw new SenderError('Choose at least one starter component.');
   const existing = [...ctx.db.component.projectId.filter(target.id)];
+  const imported = new Set([...ctx.db.generationJob.projectId.filter(target.id)].filter(job => job.mode === 'imported').map(job => job.componentId));
+  const clash = chosen.find(item => existing.some(component => component.name.toLowerCase() === item.name.toLowerCase() && imported.has(component.id)));
+  if (clash) throw new SenderError(`Imported component ${clash.name} already exists. Deselect that starter so imported work is not overwritten.`);
   chosen.forEach((item, position) => {
     const row = existing.find(component => component.name.toLowerCase() === item.name.toLowerCase()) ?? insertComponent(ctx, technologies, item.name, 'common');
     ctx.db.starterTask.insert({ id: 0n, projectId: target.id, componentId: row.id, starterId: item.id, position, state: 'pending', jobId: 0n, message: '', requestedBy: ctx.sender, updatedAt: ctx.timestamp });
@@ -1037,3 +1052,96 @@ export const buildComponentPreview = db.procedure({ jobId: t.u64(), expectedRevi
   });
   return {};
 });
+
+// ---- Existing-component import: staged chunk upload, then one atomic finalize. ----
+const importKey = (projectId: bigint, requestId: string) => projectId.toString() + ':' + requestId;
+function importTarget(ctx: Ctx, projectId: bigint, requestId: string) {
+  const target = editableProject(ctx, projectId);
+  if (!IMPORT_REQUEST_ID.test(requestId)) throw new SenderError('Invalid import request.');
+  return target;
+}
+function stagedChunks(ctx: Ctx, projectId: bigint, requestId: string) {
+  return [...ctx.db.importStaging.projectId.filter(projectId)].filter(row => row.requestId === requestId);
+}
+/** Stores one chunk. Identical re-sends are no-ops; anything inconsistent with the request is rejected. */
+export const appendImportChunk = db.reducer({ projectId: t.u64(), requestId: t.string(), sequence: t.u32(), chunkCount: t.u32(), totalBytes: t.u64(), digest: t.string(), bytes: t.array(t.u8()) }, (ctx, args) => {
+  const target = importTarget(ctx, args.projectId, args.requestId);
+  const record = ctx.db.importRecord.key.find(importKey(target.id, args.requestId));
+  if (record) { if (record.digest !== args.digest) throw new SenderError('This import request was already used for different content.'); return; }
+  if (target.setupState !== 'setup') throw new SenderError('Components can only be imported during project setup.');
+  if (!/^[0-9a-f]{64}$/.test(args.digest) || args.chunkCount < 1 || args.chunkCount > MAX_IMPORT_CHUNKS || args.sequence >= args.chunkCount ||
+    args.totalBytes < 1n || args.totalBytes > BigInt(MAX_IMPORT_PAYLOAD_BYTES) || !args.bytes.length || args.bytes.length > IMPORT_CHUNK_BYTES) throw new SenderError('The import chunk is invalid or too large.');
+  const existing = stagedChunks(ctx, target.id, args.requestId);
+  if (existing.some(row => row.chunkCount !== args.chunkCount || row.totalBytes !== args.totalBytes || row.digest !== args.digest || !row.uploadedBy.isEqual(ctx.sender))) throw new SenderError('The import request changed. Start the import again.');
+  const same = existing.find(row => row.sequence === args.sequence);
+  if (same) {
+    if (same.bytes.length !== args.bytes.length || same.bytes.some((byte, index) => byte !== args.bytes[index])) throw new SenderError('A different chunk was already received for this position. Start the import again.');
+    return;
+  }
+  const staged = existing.reduce((sum, row) => sum + BigInt(row.bytes.length), 0n) + BigInt(args.bytes.length);
+  if (staged > args.totalBytes) throw new SenderError('The import is larger than declared.');
+  if (!existing.length) {
+    // One in-flight import per uploader and project: a new request replaces an abandoned one.
+    for (const row of [...ctx.db.importStaging.projectId.filter(target.id)]) if (row.uploadedBy.isEqual(ctx.sender) && row.requestId !== args.requestId) ctx.db.importStaging.key.delete(row.key);
+    ctx.db.importExpiry.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + IMPORT_STAGING_TTL_MICROS), projectId: target.id, requestId: args.requestId });
+  }
+  ctx.db.importStaging.insert({ key: importKey(target.id, args.requestId) + ':' + args.sequence, projectId: target.id, requestId: args.requestId, sequence: args.sequence,
+    chunkCount: args.chunkCount, totalBytes: args.totalBytes, digest: args.digest, uploadedBy: ctx.sender, bytes: args.bytes, createdAt: ctx.timestamp });
+});
+/**
+ * Revalidates the complete payload and inserts every component, source checkpoint and reference in
+ * this one transaction. Any failure throws, so nothing is inserted and staging stays for retry.
+ */
+export const finalizeImport = db.reducer({ projectId: t.u64(), requestId: t.string() }, (ctx, args) => {
+  const target = importTarget(ctx, args.projectId, args.requestId);
+  if (ctx.db.importRecord.key.find(importKey(target.id, args.requestId))) return;
+  if (target.setupState !== 'setup') throw new SenderError('Components can only be imported during project setup.');
+  const chunks = stagedChunks(ctx, target.id, args.requestId).sort((a, b) => a.sequence - b.sequence);
+  if (!chunks.length) throw new SenderError('No uploaded import data was found. Start the import again.');
+  const first = chunks[0];
+  if (chunks.some(row => !row.uploadedBy.isEqual(ctx.sender))) throw new SenderError('Only the person who uploaded this import can finish it.');
+  if (chunks.length !== first.chunkCount || chunks.some((row, index) => row.sequence !== index)) throw new SenderError('The import upload is incomplete. Retry the upload.');
+  const total = chunks.reduce((sum, row) => sum + row.bytes.length, 0);
+  if (BigInt(total) !== first.totalBytes) throw new SenderError('The import upload is incomplete. Retry the upload.');
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const row of chunks) { bytes.set(row.bytes, at); at += row.bytes.length; }
+  if (sha256Hex(bytes) !== first.digest) throw new SenderError('The uploaded import does not match its checksum. Retry the upload.');
+  let payload;
+  try { payload = decodeImportPayload(bytes); } catch (cause) { throw new SenderError(cause instanceof Error ? cause.message : 'The import data is invalid.'); }
+  const secrets = [ctx.env.NVIDIA_API_KEY?.trim(), ctx.env.GEMINI_API_KEY?.trim(), ctx.env.E2B_API_KEY?.trim()].filter((value): value is string => !!value && value.length >= 8);
+  const text = new TextDecoder().decode(bytes);
+  if (secrets.some(secret => text.includes(secret) || payload.references.some(row => new TextDecoder().decode(row.bytes).includes(secret)))) throw new SenderError('Remove credentials from imported files or references before importing.');
+  const names = new Set([...ctx.db.component.projectId.filter(target.id)].map(row => row.name.toLowerCase()));
+  const clash = payload.components.find(item => names.has(item.name.toLowerCase()));
+  if (clash) throw new SenderError(`Component ${clash.name} already exists in this project. Rename it before importing.`);
+  const existingReferences = [...ctx.db.projectReference.projectId.filter(target.id)];
+  if (existingReferences.length + payload.references.length > MAX_PROJECT_REFERENCES) throw new SenderError(`This import would exceed the ${MAX_PROJECT_REFERENCES}-reference limit. Remove uploaded documents first.`);
+  const filenames = new Set(existingReferences.map(row => row.filename.toLowerCase()));
+  const duplicate = payload.references.find(row => filenames.has(row.filename.toLowerCase()));
+  if (duplicate) throw new SenderError(`A reference named ${JSON.stringify(duplicate.filename)} already exists. Rename or remove one before importing.`);
+  const fingerprint = generationFingerprint(ctx, target.id);
+  for (const item of payload.components) {
+    const row = ctx.db.component.insert({ id: 0n, projectId: target.id, name: item.name, category: item.category, rootPath: importRootPath(item.name, item.category), createdAt: ctx.timestamp });
+    // Imported provenance: not provider output and not a starter placeholder. No provider, deadline or rate counter is involved.
+    const job = ctx.db.generationJob.insert({ id: 0n, requestId: 'import:' + importKey(target.id, args.requestId) + ':' + row.id, projectId: target.id, requestedBy: ctx.sender,
+      request: 'Imported: ' + item.name, state: 'draft_ready', mode: 'imported', scenario: 'success', snapshot: '{}', fingerprint,
+      artifacts: JSON.stringify({ reply: '', files: item.files }), diagnostic: 'Imported source; unverified. No generation or build has run.', createdAt: ctx.timestamp, model: '', componentId: row.id });
+    ctx.db.componentDraft.insert({ jobId: job.id, projectId: target.id, componentId: row.id, revision: 0n, files: item.files, updatedBy: ctx.sender, updatedAt: ctx.timestamp });
+  }
+  for (const row of payload.references) insertReference(ctx, target.id, row.filename, row.purpose, row.bytes as unknown as number[], row.text);
+  ctx.db.importRecord.insert({ key: importKey(target.id, args.requestId), projectId: target.id, requestId: args.requestId, digest: first.digest,
+    componentCount: payload.components.length, referenceCount: payload.references.length, importedBy: ctx.sender, createdAt: ctx.timestamp });
+  for (const row of chunks) ctx.db.importStaging.key.delete(row.key);
+});
+export const cancelImport = db.reducer({ projectId: t.u64(), requestId: t.string() }, (ctx, args) => {
+  const target = importTarget(ctx, args.projectId, args.requestId);
+  for (const row of stagedChunks(ctx, target.id, args.requestId)) if (row.uploadedBy.isEqual(ctx.sender)) ctx.db.importStaging.key.delete(row.key);
+});
+// Scheduled only; removes abandoned staging after the expiry window.
+export const expireImportStaging = db.reducer({ onSchedule: importExpiry }, { timer: importExpiry.rowType }, (ctx, { timer }) => {
+  for (const row of stagedChunks(ctx, timer.projectId, timer.requestId)) ctx.db.importStaging.key.delete(row.key);
+});
+/** Completed imports for projects the caller can read; used by the intake to show the imported state. */
+export const visibleImports = db.view({ name: 'visible_imports', public: true }, t.array(importRecord.rowType), ctx =>
+  accessibleProjects(ctx).flatMap(project => [...ctx.db.importRecord.projectId.filter(project.id)]));

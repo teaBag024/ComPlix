@@ -740,3 +740,26 @@ Added shared/componentImport.ts as pure data handling: no backend, UI or schema 
 Checks run: `npm run typecheck` passed (frontend and module). `npx playwright test tests/componentImport.spec.ts tests/libraryExport.spec.ts tests/draftFiles.spec.ts tests/reference-files.spec.ts` passed 13/13. React and Blazor fixtures are real createLibraryZip output, so these are true round trips.
 
 Not done yet: ordinary-ZIP mapping (increment 4), staged backend persistence (increment 2) and intake UI and source consumers (increment 3). The safe chunk size against the server is not measured yet.
+
+### Increment 2: staged upload, atomic finalize and provenance (feat/component-zip-import)
+
+- **shared/importPayload.ts:** the payload wire format (JSON with base64 reference bytes), shared decode/revalidation, synchronous SHA-256, chunking and constants. The limits are 1 MiB chunks, a 96 MiB payload (64 MiB of content plus base64 overhead), 200 components and 24-hour staging expiry.
+- **Module tables:** private `import_staging` (no view), `import_record` (replay protection, visible through `visible_imports`) and scheduled `import_expiry`.
+- **Reducers:**
+  - `appendImportChunk` checks edit access, setup state, bounds and request consistency. Identical re-sends are no-ops, and a new request replaces the same uploader's abandoned one.
+  - `finalizeImport` rechecks access, verifies the hash, decodes and revalidates the payload, checks secrets, component names, reference quota and filenames, then inserts components, `mode: 'imported'` jobs, revision-0 drafts and references in one transaction. Replays are no-ops.
+  - `cancelImport` deletes the caller's staged chunks.
+  - Scheduled `expireImportStaging` removes abandoned staging.
+- **Imported mode:** `isSourceDraft` (in generationWorkflow) now covers save, chat source selection, enabling and running editor instructions, and export selection. Provider deadlines and rate accounting still use `isChatMode`. Export marks imported components `origin: 'imported'`.
+- **Setup gate:** a completed import satisfies `requireSetupInput`. The error message now mentions imports, and the frontend's known-error list matches.
+- **Starters:** `startStarterLibrary` rejects starter names that match imported components.
+- **Bindings:** regenerated with `npm run backend:generate`.
+- **Test file fix:** the staged auth changes to tests/foundation.spec.ts had pasted new helpers inside the "removed guidance page" test without closing it, so the whole file failed to parse. Added the missing `});` (unstaged).
+
+Checks run:
+- `npm run typecheck` passed.
+- `npm run backend:build` passed.
+- 19 unit tests passed (import, payload, export, setup rules). SHA-256 and base64 are checked against Node.
+- Real local server: 15 foundation tests passed, the 2 new import tests plus 13 existing setup, starter, PDF, draft, chat, editor-instruction and export tests. The import tests cover outsider rejection, a multi-chunk 1.5 MiB PDF, re-sent and conflicting chunks, incomplete upload, replay, digest reuse, exact reference bytes, unchanged intake technologies, the starter clash, the setup gate, the post-setup rejection, editing imported source, the inherited `@complix` marker staying inert, the imported export origin, rollback on a reference conflict with retry from retained staging, a tampered checksum and cancel.
+
+Not run: the full foundation suite and the browser tests. The maximum server chunk size was not measured; only 1 MiB chunks were verified. Next: increment 3 (intake review UI and frontend source consumers, including the ProjectLibrary `isSourceDraft` label and edit gating and the setup-screen gate text).

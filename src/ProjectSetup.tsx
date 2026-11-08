@@ -11,7 +11,7 @@ import { colorFields, emptyQuestionnaire, hasAnswers, parseQuestionnaire, person
 
 export type SetupStep = 'questionnaire' | 'references' | 'components' | 'progress';
 const steps: Array<[SetupStep, string]> = [['questionnaire', 'Questionnaire'], ['references', 'Documents'], ['components', 'Starter components'], ['progress', 'Build']];
-const knownErrors = ['Answer the questionnaire or upload at least one document before continuing.', 'Guidance changed. Review the latest saved version.',
+const knownErrors = ['Answer the questionnaire, upload at least one document or import components before continuing.', 'Guidance changed. Review the latest saved version.',
   'Questionnaire answers are invalid. Reload the page and try again.', 'Project edit access is required.', 'Your session expired. Sign in again and retry.',
   'ComPlix chat is not configured. Contact the operator.', 'Choose at least one starter component.', 'Starter components can only be generated during project setup.',
   'Starter components need a supported stack (React + TypeScript or Blazor). Finish setup without starters instead.'];

@@ -8,7 +8,9 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import AcceptInvitationReducer from "../accept_invitation_reducer";
 import AdvanceMockGenerationReducer from "../advance_mock_generation_reducer";
+import AppendImportChunkReducer from "../append_import_chunk_reducer";
 import CancelGenerationReducer from "../cancel_generation_reducer";
+import CancelImportReducer from "../cancel_import_reducer";
 import ClearComponentChatReducer from "../clear_component_chat_reducer";
 import CreateComponentReducer from "../create_component_reducer";
 import CreateGenerationReducer from "../create_generation_reducer";
@@ -18,6 +20,7 @@ import CreateProjectWithDetailsReducer from "../create_project_with_details_redu
 import CreateSetupProjectReducer from "../create_setup_project_reducer";
 import DismissEditorInstructionReducer from "../dismiss_editor_instruction_reducer";
 import EnableEditorInstructionReducer from "../enable_editor_instruction_reducer";
+import FinalizeImportReducer from "../finalize_import_reducer";
 import FinishProjectSetupReducer from "../finish_project_setup_reducer";
 import ImportLegacyProjectReducer from "../import_legacy_project_reducer";
 import InviteMemberReducer from "../invite_member_reducer";
@@ -45,7 +48,9 @@ import UploadReferenceReducer from "../upload_reference_reducer";
 
 export type AcceptInvitationParams = __Infer<typeof AcceptInvitationReducer>;
 export type AdvanceMockGenerationParams = __Infer<typeof AdvanceMockGenerationReducer>;
+export type AppendImportChunkParams = __Infer<typeof AppendImportChunkReducer>;
 export type CancelGenerationParams = __Infer<typeof CancelGenerationReducer>;
+export type CancelImportParams = __Infer<typeof CancelImportReducer>;
 export type ClearComponentChatParams = __Infer<typeof ClearComponentChatReducer>;
 export type CreateComponentParams = __Infer<typeof CreateComponentReducer>;
 export type CreateGenerationParams = __Infer<typeof CreateGenerationReducer>;
@@ -55,6 +60,7 @@ export type CreateProjectWithDetailsParams = __Infer<typeof CreateProjectWithDet
 export type CreateSetupProjectParams = __Infer<typeof CreateSetupProjectReducer>;
 export type DismissEditorInstructionParams = __Infer<typeof DismissEditorInstructionReducer>;
 export type EnableEditorInstructionParams = __Infer<typeof EnableEditorInstructionReducer>;
+export type FinalizeImportParams = __Infer<typeof FinalizeImportReducer>;
 export type FinishProjectSetupParams = __Infer<typeof FinishProjectSetupReducer>;
 export type ImportLegacyProjectParams = __Infer<typeof ImportLegacyProjectReducer>;
 export type InviteMemberParams = __Infer<typeof InviteMemberReducer>;

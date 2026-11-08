@@ -2,6 +2,7 @@ import { Inflate } from 'fflate';
 import { validateDraftFiles } from './draftFiles';
 import { MAX_PDF_BYTES, MAX_PDF_TEXT_BYTES, MAX_PROJECT_REFERENCES, MAX_REFERENCE_BYTES, referencePurposes, validateReferenceFile } from './referenceFiles';
 import type { WorkspaceFile } from './stackAdapters';
+import type { ImportPayload } from './importPayload';
 
 /**
  * Existing-component import, increment 1: bounded ZIP reading and ComPlix manifest validation.
@@ -319,6 +320,14 @@ export function projectConflicts(plan: Pick<ImportPlan, 'components' | 'referenc
   const total = project.referenceFilenames.length + plan.references.length;
   if (total > MAX_PROJECT_REFERENCES) issues.push(`This import would bring the project to ${total} references; the limit is ${MAX_PROJECT_REFERENCES}. Remove intake uploads first.`);
   return issues;
+}
+
+/** The reviewed plan as the backend payload: only names, categories, files and references, never archive IDs or grants. */
+export function planToPayload(plan: Pick<ImportPlan, 'components' | 'references'>): ImportPayload {
+  return {
+    components: plan.components.map(item => ({ name: item.name, category: item.category, files: item.files })),
+    references: plan.references.map(item => ({ filename: item.filename, purpose: item.purpose, bytes: item.bytes, text: item.text })),
+  };
 }
 
 /** Reads and plans a ComPlix export in one step for the browser review. */

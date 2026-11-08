@@ -36,7 +36,9 @@ import {
 // Import all reducer arg schemas
 import AcceptInvitationReducer from "./accept_invitation_reducer";
 import AdvanceMockGenerationReducer from "./advance_mock_generation_reducer";
+import AppendImportChunkReducer from "./append_import_chunk_reducer";
 import CancelGenerationReducer from "./cancel_generation_reducer";
+import CancelImportReducer from "./cancel_import_reducer";
 import ClearComponentChatReducer from "./clear_component_chat_reducer";
 import CreateComponentReducer from "./create_component_reducer";
 import CreateGenerationReducer from "./create_generation_reducer";
@@ -46,6 +48,7 @@ import CreateProjectWithDetailsReducer from "./create_project_with_details_reduc
 import CreateSetupProjectReducer from "./create_setup_project_reducer";
 import DismissEditorInstructionReducer from "./dismiss_editor_instruction_reducer";
 import EnableEditorInstructionReducer from "./enable_editor_instruction_reducer";
+import FinalizeImportReducer from "./finalize_import_reducer";
 import FinishProjectSetupReducer from "./finish_project_setup_reducer";
 import ImportLegacyProjectReducer from "./import_legacy_project_reducer";
 import InviteMemberReducer from "./invite_member_reducer";
@@ -92,6 +95,7 @@ import VisibleComponentsRow from "./visible_components_table";
 import VisibleEditorInstructionsRow from "./visible_editor_instructions_table";
 import VisibleGenerationJobsRow from "./visible_generation_jobs_table";
 import VisibleGuidanceRow from "./visible_guidance_table";
+import VisibleImportsRow from "./visible_imports_table";
 import VisibleProjectsRow from "./visible_projects_table";
 import VisibleReferencesRow from "./visible_references_table";
 import VisibleStarterTasksRow from "./visible_starter_tasks_table";
@@ -198,6 +202,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleGuidanceRow),
+  visibleImports: __table({
+    name: 'visible_imports',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleImportsRow),
   visibleProjects: __table({
     name: 'visible_projects',
     indexes: [
@@ -225,7 +236,9 @@ const tablesSchema = __schema({
 const reducersSchema = __reducers(
   __reducerSchema("accept_invitation", AcceptInvitationReducer),
   __reducerSchema("advance_mock_generation", AdvanceMockGenerationReducer),
+  __reducerSchema("append_import_chunk", AppendImportChunkReducer),
   __reducerSchema("cancel_generation", CancelGenerationReducer),
+  __reducerSchema("cancel_import", CancelImportReducer),
   __reducerSchema("clear_component_chat", ClearComponentChatReducer),
   __reducerSchema("create_component", CreateComponentReducer),
   __reducerSchema("create_generation", CreateGenerationReducer),
@@ -235,6 +248,7 @@ const reducersSchema = __reducers(
   __reducerSchema("create_setup_project", CreateSetupProjectReducer),
   __reducerSchema("dismiss_editor_instruction", DismissEditorInstructionReducer),
   __reducerSchema("enable_editor_instruction", EnableEditorInstructionReducer),
+  __reducerSchema("finalize_import", FinalizeImportReducer),
   __reducerSchema("finish_project_setup", FinishProjectSetupReducer),
   __reducerSchema("import_legacy_project", ImportLegacyProjectReducer),
   __reducerSchema("invite_member", InviteMemberReducer),
