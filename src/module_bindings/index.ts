@@ -43,6 +43,8 @@ import CreateGenerationReducer from "./create_generation_reducer";
 import CreateOrganizationReducer from "./create_organization_reducer";
 import CreateProjectReducer from "./create_project_reducer";
 import CreateProjectWithDetailsReducer from "./create_project_with_details_reducer";
+import DismissEditorInstructionReducer from "./dismiss_editor_instruction_reducer";
+import EnableEditorInstructionReducer from "./enable_editor_instruction_reducer";
 import ImportLegacyProjectReducer from "./import_legacy_project_reducer";
 import InviteMemberReducer from "./invite_member_reducer";
 import InviteProjectReducer from "./invite_project_reducer";
@@ -64,7 +66,9 @@ import UpdateProjectDetailsReducer from "./update_project_details_reducer";
 import UploadReferenceReducer from "./upload_reference_reducer";
 
 // Import all procedure arg schemas
+import * as BuildComponentPreviewProcedure from "./build_component_preview_procedure";
 import * as GenerateProjectChatProcedure from "./generate_project_chat_procedure";
+import * as RunEditorInstructionProcedure from "./run_editor_instruction_procedure";
 
 // Import all table schema definitions
 import GenerationSettingsRow from "./generation_settings_table";
@@ -76,7 +80,9 @@ import MyProjectRow from "./my_project_table";
 import OrganizationMembersRow from "./organization_members_table";
 import VisibleComponentChatRow from "./visible_component_chat_table";
 import VisibleComponentDraftsRow from "./visible_component_drafts_table";
+import VisibleComponentPreviewsRow from "./visible_component_previews_table";
 import VisibleComponentsRow from "./visible_components_table";
+import VisibleEditorInstructionsRow from "./visible_editor_instructions_table";
 import VisibleGenerationJobsRow from "./visible_generation_jobs_table";
 import VisibleGuidanceRow from "./visible_guidance_table";
 import VisibleProjectsRow from "./visible_projects_table";
@@ -149,6 +155,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleComponentDraftsRow),
+  visibleComponentPreviews: __table({
+    name: 'visible_component_previews',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleComponentPreviewsRow),
   visibleComponents: __table({
     name: 'visible_components',
     indexes: [
@@ -156,6 +169,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleComponentsRow),
+  visibleEditorInstructions: __table({
+    name: 'visible_editor_instructions',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleEditorInstructionsRow),
   visibleGenerationJobs: __table({
     name: 'visible_generation_jobs',
     indexes: [
@@ -197,6 +217,8 @@ const reducersSchema = __reducers(
   __reducerSchema("create_organization", CreateOrganizationReducer),
   __reducerSchema("create_project", CreateProjectReducer),
   __reducerSchema("create_project_with_details", CreateProjectWithDetailsReducer),
+  __reducerSchema("dismiss_editor_instruction", DismissEditorInstructionReducer),
+  __reducerSchema("enable_editor_instruction", EnableEditorInstructionReducer),
   __reducerSchema("import_legacy_project", ImportLegacyProjectReducer),
   __reducerSchema("invite_member", InviteMemberReducer),
   __reducerSchema("invite_project", InviteProjectReducer),
@@ -220,7 +242,9 @@ const reducersSchema = __reducers(
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("build_component_preview", BuildComponentPreviewProcedure.params, BuildComponentPreviewProcedure.returnType),
   __procedureSchema("generate_project_chat", GenerateProjectChatProcedure.params, GenerateProjectChatProcedure.returnType),
+  __procedureSchema("run_editor_instruction", RunEditorInstructionProcedure.params, RunEditorInstructionProcedure.returnType),
 );
 
 /** The remote SpacetimeDB module schema, both runtime and type information. */

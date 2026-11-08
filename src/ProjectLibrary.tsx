@@ -1,11 +1,12 @@
-import { createPreviewRuntime } from './previewRuntime';
+import { Button } from './components/Button';
+import { EditorInstructions } from './EditorInstructions';
 import { isChatMode } from '../shared/generationWorkflow';
 import { useDraftEditor } from './useDraftEditor';
 import { StackPreview } from './StackPreview';
 import { selectStackAdapter, type TargetStack } from '../shared/stackAdapters';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import type { DbConnection } from './module_bindings';
-import type { GenerationJob, ProjectReference, ComponentDraft, Component, ComponentMessage } from './useWorkspace';
+import type { GenerationJob, ProjectReference, ComponentDraft, ComponentPreview, Component, ComponentMessage, SavedEditorInstruction } from './useWorkspace';
 import { generationStages } from '../shared/generationWorkflow';
 import { ProjectChat } from './ProjectChat';
 
@@ -18,8 +19,9 @@ const examples = [
   { id: 'login-form', name: 'LoginForm', group: 'Compositions', source: '<!doctype html>\n<style>body{font:14px Inter,Arial,sans-serif;padding:24px}.form{max-width:320px;display:grid;gap:12px}label{display:grid;gap:5px}input{padding:9px;border:1px solid #cbd6ce;border-radius:7px}button{padding:9px;background:#214e34;color:white;border:0;border-radius:7px}</style>\n<form class="form"><strong>Welcome back</strong><label>Email<input type="email"></label><label>Password<input type="password"></label><button type="button">Sign in</button></form>' },
   { id: 'filter-panel', name: 'FilterPanel', group: 'Compositions', source: '<!doctype html>\n<style>body{font:14px Inter,Arial,sans-serif;padding:24px}.panel{max-width:320px;padding:16px;border:1px solid #e1e8e3;border-radius:9px;display:grid;gap:12px}label{display:grid;gap:5px}input,select{padding:8px;border:1px solid #cbd6ce;border-radius:7px}</style>\n<form class="panel"><strong>Filter results</strong><label>Search<input placeholder="Search components"></label><label>Category<select><option>All components</option><option>Common</option></select></label></form>' },
 ];
-export function ProjectLibrary({ projectId, target, previewToken, draftGuard, editable, jobs: allJobs, components, messages, drafts, references, mode, chatEnabled = false, connection }: {
-  projectId: bigint; target: TargetStack; previewToken?: string; draftGuard?: { current: (() => Promise<unknown>) | undefined }; editable: boolean; jobs: GenerationJob[]; components: Component[]; messages: ComponentMessage[]; drafts: ComponentDraft[]; references: ProjectReference[]; mode: string; chatEnabled?: boolean; connection: DbConnection;
+export function ProjectLibrary({ projectId, target, instructions = [], draftGuard, editable, jobs: allJobs, components, messages, drafts, previews, references, mode, chatEnabled = false, connection }: {
+  instructions?: SavedEditorInstruction[];
+  projectId: bigint; target: TargetStack; draftGuard?: { current: (() => Promise<unknown>) | undefined }; editable: boolean; jobs: GenerationJob[]; components: Component[]; messages: ComponentMessage[]; drafts: ComponentDraft[]; previews: ComponentPreview[]; references: ProjectReference[]; mode: string; chatEnabled?: boolean; connection: DbConnection;
 }) {
   const [selectedComponentId, setSelectedComponentId] = useState(() => new URLSearchParams(location.search).get('selected') ?? '');
   const component = components.find(row => row.id.toString() === selectedComponentId);
@@ -40,11 +42,6 @@ export function ProjectLibrary({ projectId, target, previewToken, draftGuard, ed
     window.addEventListener('popstate', restore); return () => window.removeEventListener('popstate', restore);
   }, []);
   const adapter = selectStackAdapter(target);
-  const previewRuntime = useMemo(() => {
-    const endpoint = import.meta.env.VITE_PREVIEW_CONTROLLER_URL;
-    try { return endpoint && previewToken ? createPreviewRuntime(endpoint, previewToken) : undefined; }
-    catch { return undefined; }
-  }, [previewToken]);
   const [request, setRequest] = useState('Create a reusable Common Button with documentation and an example.');
   const [scenario, setScenario] = useState('success');
   const [selectedJob, setSelectedJob] = useState('');
@@ -115,7 +112,7 @@ export function ProjectLibrary({ projectId, target, previewToken, draftGuard, ed
     finally { running.current = false; setBusy(false); }
   }
   return <section className="component-library">
-    <p role="status">{adapter ? `${adapter.label}: ${previewRuntime ? 'preview controller configured; build to verify the saved draft.' : 'adapter available; isolated build/runtime not connected.'}` : 'Unsupported target stack: no matching adapter. Code and Docs remain available; compilation and preview are unavailable.'}</p>
+    <p role="status">{adapter ? `${adapter.label}: saved drafts preview automatically in an isolated E2B sandbox.` : 'Unsupported target stack: no matching adapter. Code and Docs remain available; compilation and preview are unavailable.'}</p>
     <dialog ref={creation} aria-labelledby="create-component-title"><form onSubmit={event => {
       event.preventDefault(); setCreating(true); setCreationError('');
       void (async () => {
@@ -125,40 +122,46 @@ export function ProjectLibrary({ projectId, target, previewToken, draftGuard, ed
         selectComponent(created.id.toString()); creation.current?.close(); setName(''); setInitialPrompt('');
         if (initialPrompt.trim()) { const requestId = crypto.randomUUID(); await connection.procedures.generateProjectChat({ projectId, componentId: created.id, requestId, request: initialPrompt }); const result = [...connection.db.visibleGenerationJobs.iter()].find(row => row.requestId === requestId); if (result?.state === 'draft_ready' && hasFiles(result)) setSelectedJob(result.id.toString()); }
       })().catch(cause => setCreationError(cause instanceof Error ? cause.message : 'Component creation failed.')).finally(() => setCreating(false));
-    }}><h3 id="create-component-title">New component</h3><label>Component name<input required maxLength={80} pattern="[A-Za-z0-9_-]+" value={name} onChange={event => setName(event.target.value)} /></label><fieldset><legend>Category</legend>{['common', 'composition'].map(value => <label key={value}><input type="radio" name="category" value={value} checked={category === value} onChange={() => setCategory(value)} />{value === 'common' ? 'Common' : 'Composition'}</label>)}</fieldset><label>Initial prompt (optional)<textarea maxLength={4000} value={initialPrompt} onChange={event => setInitialPrompt(event.target.value)} /></label>{creationError && <p role="alert">{creationError}</p>}<button disabled={creating}>Create component</button><button disabled={creating} type="button" onClick={() => creation.current?.close()}>Cancel</button></form></dialog>
+    }}><h3 id="create-component-title">New component</h3><label>Component name<input required maxLength={80} pattern="[A-Za-z0-9_-]+" value={name} onChange={event => setName(event.target.value)} /></label><fieldset><legend>Category</legend>{['common', 'composition'].map(value => <label key={value}><input type="radio" name="category" value={value} checked={category === value} onChange={() => setCategory(value)} />{value === 'common' ? 'Common' : 'Composition'}</label>)}</fieldset><label>Initial prompt (optional)<textarea maxLength={4000} value={initialPrompt} onChange={event => setInitialPrompt(event.target.value)} /></label>{creationError && <p role="alert">{creationError}</p>}<Button disabled={creating}>Create component</Button><Button disabled={creating} type="button" onClick={() => creation.current?.close()}>Cancel</Button></form></dialog>
     {creationError && !creation.current?.open && <p role="alert">Component created; initial chat failed. {creationError}</p>}
     {error && <p role="alert">{error}</p>}
     {selectedJobDeleted && <p role="alert">This draft was deleted in another session. Local text is retained here; copy any changes before discarding edits or leaving.</p>}
     <div className={'studio-columns' + (componentListOpen ? '' : ' list-hidden')}>
-        {componentListOpen && <aside className="component-list" aria-label="Available components"><div className="component-list-heading"><h3>Components</h3>{editable && <button disabled={editor.unsaved} type="button" onClick={() => creation.current?.showModal()}>+ New Component</button>}
-          <button type="button" className="secondary" aria-expanded="true" onClick={() => setComponentListOpen(false)}>Hide list</button></div>
+        {componentListOpen && <aside className="component-list" aria-label="Available components"><div className="component-list-heading"><h3>Components</h3>{editable && <Button disabled={editor.unsaved} type="button" onClick={() => creation.current?.showModal()}>+ New Component</Button>}
+          <Button type="button" variant="secondary" aria-expanded="true" onClick={() => setComponentListOpen(false)}>Hide list</Button></div>
           {['Common foundation', 'Compositions'].map(group => <section className="component-group" key={group}>
-            <div className="eyebrow">{group}</div><ul>{components.filter(row => row.category === (group === 'Common foundation' ? 'common' : 'composition')).map(row => <li key={row.id.toString()}><button type="button" className="component-link" disabled={editor.unsaved || chatPending} aria-pressed={component?.id === row.id} onClick={() => selectComponent(row.id.toString())}>{row.name}</button><span>{row.rootPath}</span>{component?.id === row.id && <ul>{files.map(item => <li key={item.path}><button className="component-link" type="button" onClick={() => { setSelectedFile(item.path); setView(/\.(md|mdx|xml)$/i.test(item.path) ? 'documentation' : 'source'); }}>{item.path}</button></li>)}</ul>}</li>)}{!component && examples.filter(item => item.group === group).map(item => <li key={item.id}>
-              <button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={selectedExample === item.id} onClick={() => {
+            <div className="eyebrow">{group}</div><ul>{components.filter(row => row.category === (group === 'Common foundation' ? 'common' : 'composition')).map(row => <li key={row.id.toString()}><Button type="button" className="component-link" disabled={editor.unsaved || chatPending} aria-pressed={component?.id === row.id} onClick={() => selectComponent(row.id.toString())}>{row.name}</Button><span>{row.rootPath}</span>{component?.id === row.id && <ul>{files.map(item => <li key={item.path}><Button className="component-link" type="button" onClick={() => { setSelectedFile(item.path); setView(/\.(md|mdx|xml)$/i.test(item.path) ? 'documentation' : 'source'); }}>{item.path}</Button></li>)}</ul>}</li>)}{!component && examples.filter(item => item.group === group).map(item => <li key={item.id}>
+              <Button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={selectedExample === item.id} onClick={() => {
                 setSelectedExample(item.id); setSelectedJob(''); setSelectedFile(''); setView('source');
-              }}>{item.name}</button><span>UI example · not in library</span>
+              }}>{item.name}</Button><span>UI example · not in library</span>
             </li>)}</ul>
           </section>)}
           {candidates.length > 0 && <section className="component-group candidate-group"><div className="eyebrow">Draft candidates</div>
           <ul>{candidates.map(candidate => <li key={candidate.id.toString()}>
-            <button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={candidate.id === job?.id} onClick={() => { setSelectedExample(''); setSelectedJob(candidate.id.toString()); setView('preview'); }}>
+            <Button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={candidate.id === job?.id} onClick={() => { setSelectedExample(''); setSelectedJob(candidate.id.toString()); setView('preview'); }}>
               {candidate.request}
-            </button><span>{candidate.componentId && !candidate.model ? 'Starter draft - unverified' : candidate.mode === 'gemini' ? 'Gemini + Nemotron draft · unverified' : isChatMode(candidate.mode) ? 'NVIDIA draft · unverified' : 'Mock candidate'}</span>
+            </Button><span>{candidate.componentId && !candidate.model ? 'Starter draft - unverified' : candidate.mode === 'gemini' ? 'Gemini + Nemotron draft · unverified' : isChatMode(candidate.mode) ? 'NVIDIA draft · unverified' : 'Mock candidate'}</span>
           </li>)}</ul></section>}
         </aside>}
         <section className="studio-preview-pane" aria-label="Component preview and code">
-          {!componentListOpen && <button type="button" className="secondary show-component-list" aria-expanded="false" onClick={() => setComponentListOpen(true)}>Show component list</button>}
-          <div className="library-views" aria-label="Candidate inspection">{['preview', 'source', 'documentation', 'validation'].map(item => <button type="button" className="secondary" key={item} aria-pressed={view === item} onClick={() => setView(item)}>{{ source: 'Code', documentation: 'Docs', preview: 'Preview', validation: 'Validation' }[item]}</button>)}</div>
+          {!componentListOpen && <Button type="button" className="secondary show-component-list" aria-expanded="false" onClick={() => setComponentListOpen(true)}>Show component list</Button>}
+          <div className="library-views" aria-label="Candidate inspection">{['preview', 'source', 'documentation', 'validation'].map(item => <Button type="button" variant="secondary" key={item} aria-pressed={view === item} onClick={() => setView(item)}>{{ source: 'Code', documentation: 'Docs', preview: 'Preview', validation: 'Validation' }[item]}</Button>)}</div>
           {view === 'preview' && (job && preview && job.state === 'preview_ready'
             ? <iframe title="Mock component preview" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={preview.content} />
             : example ? <><p className="example-disclaimer">Illustrative UI example — not generated or saved to this library.</p><iframe title={'Example preview: ' + example.name} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={example.source} /></>
               : !job ? <div className="library-empty-state"><span className="eyebrow">Current library</span><strong>No published components yet</strong><p>Select a saved draft to build and inspect its actual compiled output.</p></div> : null)}
-          {!example && !preview && <div hidden={view !== 'preview'}><StackPreview key={job?.id.toString() ?? 'empty'} adapter={adapter} runtime={previewRuntime} editable={editable} active={view === 'preview'}
-                revision={{ projectId: projectId.toString(), revisionId: `${job?.id ?? 'empty'}:${editor.revision}`, sourceJobId: job?.id.toString(), draftRevision: editor.revision.toString(), target, files }}
-                flush={async () => { const savedRevision = await editor.flush(); return { projectId: projectId.toString(), revisionId: `${job?.id ?? 'empty'}:${savedRevision}`, sourceJobId: job?.id.toString(), draftRevision: savedRevision.toString(), target, files: editor.files }; }} /></div>}
+          {!example && !preview && <div hidden={view !== 'preview'}><StackPreview key={job?.id.toString() ?? 'empty'} adapter={adapter} connection={connection} jobId={job && isChatMode(job.mode) && job.state === 'draft_ready' && files.length ? job.id : undefined} savedRevision={editor.revision} unsaved={editor.unsaved} preview={previews.find(row => row.jobId === job?.id)} editable={editable && !selectedJobDeleted} active={view === 'preview'} /></div>}
           {view === 'source' && <>{files.length ? <><label>Candidate file<select aria-label="Candidate file" value={file?.path ?? ''} onChange={event => setSelectedFile(event.target.value)}>{files.map(item => <option key={item.path}>{item.path}</option>)}</select></label><p role="status" data-testid="draft-save-status">{editor.status}</p>
               <textarea className="code-editor" aria-label="Candidate code" data-testid="candidate-source" spellCheck={false} readOnly={!canEdit} value={file?.content ?? ''} onChange={event => file && editor.change(file.path, event.target.value)} />
-              {editor.error && <div role="alert"><p>{editor.error}</p>{!editor.error.includes('Draft changed.') && <button type="button" onClick={() => editor.retry()}>Retry draft save</button>}<button type="button" className="secondary" onClick={() => editor.reload()}>Discard local edits and load saved draft</button></div>}
+              {component && job && <EditorInstructions key={`${component.id}:${job.id}`} componentId={component.id} sourceJobId={job.id} revision={editor.revision}
+                files={files} unsaved={editor.unsaved} saveError={editor.error} editable={!!canEdit} available={chatEnabled && !!adapter}
+                busy={allJobs.some(active) || chatPending || busy} connection={connection} instructions={instructions} jobs={allJobs}
+                onResult={(id, sourceId, revision) => {
+                  if (lastSelectedJob.current?.id !== sourceId || editor.isUnsaved() || editor.revision !== revision) return;
+                  const result = [...connection.db.visibleGenerationJobs.iter()].find(row => row.id === id);
+                  if (result && hasFiles(result)) { setSelectedExample(''); setSelectedJob(id.toString()); setSelectedFile(''); }
+                }} />}
+              {editor.error && <div role="alert"><p>{editor.error}</p>{!editor.error.includes('Draft changed.') && <Button type="button" onClick={() => editor.retry()}>Retry draft save</Button>}<Button type="button" variant="secondary" onClick={() => editor.reload()}>Discard local edits and load saved draft</Button></div>}
               <p className="note">{canEdit ? 'Edits autosave as an unverified draft. Source, examples and documentation share this file set; build explicitly from Preview to execute a saved revision.' : 'Read-only draft. Illustrative mock fixtures cannot be edited.'}</p></>
             : example ? <><p className="example-disclaimer">Illustrative source — not generated or saved to this library.</p><pre data-testid="example-source">{example.source}</pre></> : <p>No candidate source files yet.</p>}</>}
           {view === 'documentation' && <><label>Documentation file<select aria-label="Documentation file" value={document?.path ?? ''} onChange={event => setSelectedFile(event.target.value)}>{documents.map(item => <option key={item.path}>{item.path}</option>)}</select></label><pre>{document?.content ?? (example ? 'This UI-only example has no project documentation.' : 'No candidate documentation yet.')}</pre></>}
@@ -208,7 +211,7 @@ export function ProjectLibrary({ projectId, target, previewToken, draftGuard, ed
           <label>Component request<textarea aria-label="Component request" required maxLength={4000} value={request} onChange={event => setRequest(event.target.value)} /></label>
           <p className="note">The job captures this project's saved technologies, guidance and all saved references. Past job context remains in history even if a reference is later removed.</p>
           <label>Mock outcome<select aria-label="Mock outcome" value={scenario} onChange={event => setScenario(event.target.value)}><option value="success">Preview success fixture</option><option value="generation_failure">Simulated generation failure</option><option value="build_failure">Simulated build failure</option></select></label>
-          <button>Queue mock generation</button>
+          <Button>Queue mock generation</Button>
         </fieldset></form>}
         {!editable && <p>Read-only library access. An editor can create or run jobs.</p>}
         {!jobs.length && <p>No generation jobs yet.</p>}
@@ -216,8 +219,8 @@ export function ProjectLibrary({ projectId, target, previewToken, draftGuard, ed
         {job && <>
           <p role="status" data-testid="generation-status">{isChatMode(job.mode) && job.state === 'generating' ? 'ComPlix is thinking' : isChatMode(job.mode) && job.state === 'draft_ready' && !files.length ? 'ComPlix replied' : stages[job.state] ?? job.state} · {job.componentId && !job.model ? 'Starter / unverified draft' : isChatMode(job.mode) ? job.mode === 'gemini' ? 'Gemini + Nemotron / unverified draft' : 'NVIDIA / unverified draft' : 'Mock / unverified candidate'}</p>
           {job.diagnostic && <p role={job.state === 'failed' ? 'alert' : undefined}>{job.diagnostic}</p>}
-          {editable && active(job) && <>{job.mode === 'mock' && <button disabled={busy || mode !== 'mock' || job.mode !== 'mock'} onClick={() => void run(job)}>{job.state === 'queued' ? 'Run mock pipeline' : 'Resume mock pipeline'}</button>}<button className="secondary" onClick={() => void connection.reducers.cancelGeneration({ jobId: job.id }).catch(fail)}>Cancel job</button></>}
-          {editable && !active(job) && <><button disabled={editor.unsaved} className="secondary" onClick={() => setDeleting(true)}>Delete job history</button>{deleting && <><p>Delete this job's conversation turn, stored context and candidate files? This cannot be undone.</p><button onClick={() => void connection.reducers.removeGeneration({ jobId: job.id }).then(() => setDeleting(false)).catch(fail)}>Confirm job deletion</button></>}</>}
+          {editable && active(job) && <>{job.mode === 'mock' && <Button disabled={busy || mode !== 'mock' || job.mode !== 'mock'} onClick={() => void run(job)}>{job.state === 'queued' ? 'Run mock pipeline' : 'Resume mock pipeline'}</Button>}<Button variant="secondary" onClick={() => void connection.reducers.cancelGeneration({ jobId: job.id }).catch(fail)}>Cancel job</Button></>}
+          {editable && !active(job) && <><Button disabled={editor.unsaved} variant="secondary" onClick={() => setDeleting(true)}>Delete job history</Button>{deleting && <><p>Delete this job's conversation turn, stored context and candidate files? This cannot be undone.</p><Button onClick={() => void connection.reducers.removeGeneration({ jobId: job.id }).then(() => setDeleting(false)).catch(fail)}>Confirm job deletion</Button></>}</>}
         </>}
       </details>
   </section>;

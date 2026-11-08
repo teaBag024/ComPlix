@@ -9,6 +9,12 @@ test('adapter selection never falls back to React or generic compilation', () =>
   expect(selectStackAdapter({ ...target, framework: 'Angular' })).toBeUndefined();
   expect(selectStackAdapter({ ...target, framework: 'React' })).toBeUndefined();
   expect(selectStackAdapter({ framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' })).toBe(reactAdapter);
+  // Framework + language decide; styling, extra libraries and versions do not block preview.
+  expect(selectStackAdapter({ framework: 'React 19', language: 'TypeScript 5', styling: 'Tailwind', libraries: 'shadcn/ui, lucide-react', versions: '19.3' })).toBe(reactAdapter);
+  expect(selectStackAdapter({ framework: 'React + TypeScript', language: '', styling: '', libraries: '', versions: '' })).toBe(reactAdapter);
+  expect(selectStackAdapter({ framework: 'Blazor WebAssembly', language: 'C# 13', styling: 'Bootstrap 5', libraries: 'MudBlazor', versions: '' })).toBe(blazorAdapter);
+  expect(selectStackAdapter({ framework: 'React Native', language: 'TypeScript', styling: '', libraries: '', versions: '' })).toBeUndefined();
+  expect(selectStackAdapter({ framework: 'React', language: 'JavaScript', styling: '', libraries: '', versions: '' })).toBeUndefined();
   expect(nvidiaMessages(JSON.stringify({ technologies: target }))[0].content).toContain('.razor');
   expect(nvidiaMessages(JSON.stringify({ technologies: { ...target, framework: 'Vue' } }))[0].content).toContain('Unsupported target stack');
   expect(blazorAdapter.prepareExport(revision).map(file => file.path)).toContain('Common/Button.razor');

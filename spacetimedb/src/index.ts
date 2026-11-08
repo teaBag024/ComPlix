@@ -1,10 +1,12 @@
 import { selectStackAdapter } from '../../shared/stackAdapters';
 import { isChatMode, runComponentChat, GEMINI_MODEL } from '../../shared/componentChat';
 import { validateDraftFiles } from '../../shared/draftFiles';
+import { detectEditorInstructions, type EditorInstruction } from '../../shared/editorInstructions';
+import { previewKind, previewMessages, previewUrl, withPreviewEntry, startSandboxBuild, PREVIEW_IDLE_SECONDS } from '../../shared/sandboxPreview';
 import { NVIDIA_MODEL } from '../../shared/nvidiaDraft';
 import { generationStages, MAX_GENERATION_HISTORY, mockArtifacts } from '../../shared/generationWorkflow';
 import { MAX_PROJECT_REFERENCES, validateReferenceFile } from '../../shared/referenceFiles';
-import { schema, table, t, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from 'spacetimedb/server';
+import { schema, table, t, SenderError, type InferSchema, type ReducerCtx, type ViewCtx, type ProcedureCtx } from 'spacetimedb/server';
 import { Identity, Timestamp, TimeDuration, ScheduleAt } from 'spacetimedb';
 
 // Preserve the first milestone's schema and data for explicit, proof-of-possession transfer.
@@ -62,12 +64,23 @@ const component = table({ name: 'component' }, {
 const componentChatMessage = table({ name: 'component_chat_message' }, {
   id: t.u64().primaryKey().autoInc(), componentId: t.u64().index('btree'), projectId: t.u64().index('btree'), senderIdentity: t.identity(), role: t.string(), content: t.string(), jobId: t.option(t.u64()), createdAt: t.timestamp(),
 });
-const db = schema({ component, componentChatMessage, project, userProfile, organization, membership, workspaceProject, projectAccess, invitation, legacyTransfer, projectGuidance, projectReference, generationJob, componentDraft, modelUsage, generationDeadline }, {
-  env: { AUTH_ISSUER: t.string().optional(), AUTH_CLIENT_ID: t.string().optional(), GENERATION_MODE: t.string().optional(), NVIDIA_ENABLED: t.string().optional(), NVIDIA_API_KEY: t.string().optional(), NVIDIA_MODEL: t.string().optional(), GEMINI_API_KEY: t.string().optional(), GEMINI_MODEL: t.string().optional() },
+// Private sandbox leases: write keys never leave this table; only the capability URL is shown.
+const componentPreview = table({ name: 'component_preview' }, {
+  jobId: t.u64().primaryKey(), projectId: t.u64().index('btree'), componentId: t.u64(), sandboxId: t.string(), host: t.string(),
+  writeKey: t.string(), capability: t.string(), revision: t.u64(), expiresAt: t.timestamp(), updatedAt: t.timestamp(),
+});
+const editorInstruction = table({ name: 'editor_instruction' }, {
+  id: t.u64().primaryKey().autoInc(), key: t.string().unique(), projectId: t.u64().index('btree'), componentId: t.u64(),
+  sourceJobId: t.u64(), revision: t.u64(), path: t.string(), text: t.string(), line: t.u32(),
+  state: t.string(), jobId: t.u64(), updatedBy: t.identity(), updatedAt: t.timestamp(),
+});
+const db = schema({ editorInstruction, componentPreview, component, componentChatMessage, project, userProfile, organization, membership, workspaceProject, projectAccess, invitation, legacyTransfer, projectGuidance, projectReference, generationJob, componentDraft, modelUsage, generationDeadline }, {
+  env: { AUTH_ISSUER: t.string().optional(), AUTH_CLIENT_ID: t.string().optional(), GENERATION_MODE: t.string().optional(), NVIDIA_ENABLED: t.string().optional(), NVIDIA_API_KEY: t.string().optional(), NVIDIA_MODEL: t.string().optional(), GEMINI_API_KEY: t.string().optional(), GEMINI_MODEL: t.string().optional(), E2B_API_KEY: t.string().optional(), E2B_REACT_TEMPLATE: t.string().optional(), E2B_BLAZOR_TEMPLATE: t.string().optional(), PREVIEW_APP_ORIGIN: t.string().optional() },
 });
 export default db;
 type Ctx = ReducerCtx<InferSchema<typeof db>>;
 type ReadCtx = ViewCtx<InferSchema<typeof db>>;
+type ProcCtx = ProcedureCtx<InferSchema<typeof db>>;
 const key = (id: bigint, user: Identity) => id.toString() + ':' + user.toHexString();
 function denied(): never { throw new SenderError('Access denied.'); }
 function name(value: string) {
@@ -426,11 +439,14 @@ export const uploadReference = db.reducer({ projectId: t.u64(), filename: t.stri
   let content: string;
   try { content = validateReferenceFile(args.filename, new Uint8Array(args.bytes), args.purpose); }
   catch (cause) { throw new SenderError(cause instanceof Error ? cause.message : 'Invalid reference file.'); }
-  const existing = [...ctx.db.projectReference.projectId.filter(target.id)];
-  if (existing.length >= MAX_PROJECT_REFERENCES) throw new SenderError('This project already has 20 references.');
-  if (existing.some(row => row.filename.toLowerCase() === args.filename.toLowerCase())) throw new SenderError('A reference with this filename already exists. Remove it first or use a different filename.');
-  ctx.db.projectReference.insert({ id: 0n, ...args, content, uploadedBy: ctx.sender, createdAt: ctx.timestamp });
+  insertReference(ctx, target.id, args.filename, args.purpose, args.bytes, content);
 });
+function insertReference(ctx: Ctx, projectId: bigint, filename: string, purpose: string, bytes: number[], content: string) {
+  const existing = [...ctx.db.projectReference.projectId.filter(projectId)];
+  if (existing.length >= MAX_PROJECT_REFERENCES) throw new SenderError('This project already has 20 references.');
+  if (existing.some(row => row.filename.toLowerCase() === filename.toLowerCase())) throw new SenderError('A reference with this filename already exists. Remove it first or use a different filename.');
+  ctx.db.projectReference.insert({ id: 0n, projectId, filename, purpose, bytes, content, uploadedBy: ctx.sender, createdAt: ctx.timestamp });
+}
 export const removeReference = db.reducer({ referenceId: t.u64() }, (ctx, args) => {
   user(ctx);
   const row = ctx.db.projectReference.id.find(args.referenceId);
@@ -447,18 +463,19 @@ function generationFingerprint(ctx: Ctx | ReadCtx, projectId: bigint) {
   const refs = [...ctx.db.projectReference.projectId.filter(projectId)].map(row => row.id.toString()).sort();
   return JSON.stringify([target.name, target.revision.toString(), guidance?.revision.toString() ?? '0', refs]);
 }
-type GenerationArgs = { projectId: bigint; requestId: string; request: string; scenario: string; sourceJobId?: bigint; expectedDraftRevision?: bigint; componentId?: bigint };
+type GenerationArgs = { projectId: bigint; requestId: string; request: string; scenario: string; sourceJobId?: bigint; expectedDraftRevision?: bigint; componentId?: bigint; editorInstruction?: { id: string; path: string; text: string; line: number } };
 function queueGeneration(ctx: Ctx, args: GenerationArgs, mode = 'mock', secret = '', model = '') {
   user(ctx);
+  const actor = ctx.sender;
   const project = ctx.db.workspaceProject.id.find(args.projectId);
-  if (!project || permission(ctx, project, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
+  if (!project || permission(ctx, project, actor) !== 'editor') throw new SenderError('Project edit access is required.');
   if (mode === 'mock' ? ctx.env.GENERATION_MODE !== 'mock' : ctx.env.NVIDIA_ENABLED !== 'true') throw new SenderError('Generation providers are not configured.');
   if (!/^[a-zA-Z0-9-]{16,80}$/.test(args.requestId) || !args.request.trim() || args.request.length > 4000 || !['success', 'generation_failure', 'build_failure'].includes(args.scenario)) throw new SenderError('Provide a valid generation request and mock scenario.');
   const selectedComponent = args.componentId ? ctx.db.component.id.find(args.componentId) : undefined;
   if (args.componentId && (!selectedComponent || selectedComponent.projectId !== project.id)) denied();
   const replay = ctx.db.generationJob.requestId.find(args.requestId);
   if (replay) {
-    if (replay.componentId !== (args.componentId ?? 0n) || replay.projectId !== args.projectId || !replay.requestedBy.isEqual(ctx.sender) || replay.request !== args.request.trim() || replay.scenario !== args.scenario || replay.mode !== mode || replay.model !== model || (JSON.parse(replay.snapshot).requestedSourceJobId ?? '') !== (args.sourceJobId?.toString() ?? '')) denied();
+    if (replay.componentId !== (args.componentId ?? 0n) || replay.projectId !== args.projectId || !replay.requestedBy.isEqual(actor) || replay.request !== args.request.trim() || replay.scenario !== args.scenario || replay.mode !== mode || replay.model !== model || (JSON.parse(replay.snapshot).requestedSourceJobId ?? '') !== (args.sourceJobId?.toString() ?? '')) denied();
     return replay;
   }
   expireStaleGenerations(ctx, project.id);
@@ -489,7 +506,7 @@ function queueGeneration(ctx: Ctx, args: GenerationArgs, mode = 'mock', secret =
       const files = latestCommon ? ctx.db.componentDraft.jobId.find(latestCommon.id)?.files ?? JSON.parse(latestCommon.artifacts).files : [];
       return { name: row.name, rootPath: row.rootPath, contracts: files.filter((file: { path: string }) => /\.(md|d\.ts|xml)$/.test(file.path)) };
     }) : [], conversation, candidateFiles, editing, requestedSourceJobId: args.sourceJobId?.toString() ?? '', technologies: { name: project.name, framework: technologies.framework, language: technologies.language, styling: technologies.styling, libraries: technologies.libraries, versions: technologies.versions },
-    guidance: guidance ? { audience: guidance.audience, technical: guidance.technical, style: guidance.style, colors: guidance.colors, typography: guidance.typography, spacing: guidance.spacing, accessibility: guidance.accessibility, guidance: guidance.guidance } : {}, references, request: args.request.trim() });
+    guidance: guidance ? { audience: guidance.audience, technical: guidance.technical, style: guidance.style, colors: guidance.colors, typography: guidance.typography, spacing: guidance.spacing, accessibility: guidance.accessibility, guidance: guidance.guidance } : {}, references, request: args.request.trim(), ...(args.editorInstruction ? { origin: 'editor_comment', editorInstruction: args.editorInstruction } : {}) });
   if (new TextEncoder().encode(snapshot).length > 65536) throw new SenderError('Complete project context exceeds 64 KiB. Shorten or remove project references or reduce draft/context size before sending.');
   if (secret && snapshot.includes(secret)) throw new SenderError('Remove credentials from the request or project context.');
   if (isChatMode(mode)) {
@@ -499,9 +516,9 @@ function queueGeneration(ctx: Ctx, args: GenerationArgs, mode = 'mock', secret =
     const next = { identity: ctx.sender, windowStart: withinWindow ? usage.windowStart : ctx.timestamp, requests: withinWindow ? usage.requests + 1 : 1 };
     if (usage) ctx.db.modelUsage.identity.update(next); else ctx.db.modelUsage.insert(next);
   }
-  const inserted = ctx.db.generationJob.insert({ id: 0n, requestId: args.requestId, projectId: project.id, requestedBy: ctx.sender, request: args.request.trim(),
+  const inserted = ctx.db.generationJob.insert({ id: 0n, requestId: args.requestId, projectId: project.id, requestedBy: actor, request: args.request.trim(),
     componentId: args.componentId ?? 0n, state: 'queued', mode, model, scenario: args.scenario, snapshot, fingerprint: generationFingerprint(ctx, project.id), artifacts: '', diagnostic: '', createdAt: ctx.timestamp });
-  if (selectedComponent) ctx.db.componentChatMessage.insert({ id: 0n, componentId: selectedComponent.id, projectId: project.id, senderIdentity: ctx.sender, role: 'user', content: args.request.trim(), jobId: inserted.id, createdAt: ctx.timestamp });
+  if (selectedComponent) ctx.db.componentChatMessage.insert({ id: 0n, componentId: selectedComponent.id, projectId: project.id, senderIdentity: actor, role: 'user', content: args.request.trim(), jobId: inserted.id, createdAt: ctx.timestamp });
   if (isChatMode(mode)) ctx.db.generationDeadline.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + 90000000n), jobId: inserted.id });
   return inserted;
 }
@@ -520,6 +537,55 @@ export const saveComponentDraft = db.reducer({ jobId: t.u64(), expectedRevision:
   if (secrets.some(secret => secret && JSON.stringify(files).includes(secret))) throw new SenderError('Remove credentials from draft files.');
   const row = { componentId: job.componentId, jobId: job.id, projectId: job.projectId, revision: args.expectedRevision + 1n, files, updatedBy: ctx.sender, updatedAt: ctx.timestamp };
   if (current) ctx.db.componentDraft.jobId.update(row); else ctx.db.componentDraft.insert(row);
+  if (job.componentId) {
+    const previousFiles = current?.files ?? JSON.parse(job.artifacts).files;
+    const previousItems = detectEditorInstructions(previousFiles);
+    const previous = new Set(previousItems.map(item => item.key));
+    const detected = detectEditorInstructions(files);
+    const keys = new Set(detected.map(item => `${job.componentId}:${item.key}`));
+    for (const record of ctx.db.editorInstruction.projectId.filter(job.projectId)) {
+      if (record.sourceJobId === job.id && ['pending', 'blocked'].includes(record.state) && !keys.has(record.key)) ctx.db.editorInstruction.id.update({ ...record, state: 'dismissed', updatedAt: ctx.timestamp });
+    }
+    for (const item of detected) {
+      const key = `${job.componentId}:${item.key}`;
+      const existing = ctx.db.editorInstruction.key.find(key);
+      if (existing?.state === 'pending' && existing.sourceJobId === job.id) ctx.db.editorInstruction.id.update({ ...existing, revision: row.revision, line: item.line, updatedBy: ctx.sender, updatedAt: ctx.timestamp });
+      else if (!existing && !previous.has(item.key) && !previousItems.some(old => old.text === item.text) &&
+        ![...ctx.db.editorInstruction.projectId.filter(job.projectId)].some(old => old.componentId === job.componentId && old.text === item.text)) insertEditorInstruction(ctx, job, row.revision, item);
+    }
+  }
+});
+function insertEditorInstruction(ctx: Ctx, job: { id: bigint; projectId: bigint; componentId: bigint }, revision: bigint, item: EditorInstruction) {
+  return ctx.db.editorInstruction.insert({ id: 0n, key: `${job.componentId}:${item.key}`, projectId: job.projectId, componentId: job.componentId,
+    sourceJobId: job.id, revision, path: item.path, text: item.text, line: item.line, state: 'pending', jobId: 0n, updatedBy: ctx.sender, updatedAt: ctx.timestamp });
+}
+export const visibleEditorInstructions = db.view({ name: 'visible_editor_instructions', public: true }, t.array(editorInstruction.rowType), ctx =>
+  accessibleProjects(ctx).flatMap(project => [...ctx.db.editorInstruction.projectId.filter(project.id)]));
+
+// Explicitly enable an inherited marker or rerun a terminal instruction. Autosave never does this.
+export const enableEditorInstruction = db.reducer({ sourceJobId: t.u64(), expectedRevision: t.u64(), instructionKey: t.string() }, (ctx, args) => {
+  user(ctx);
+  const source = ctx.db.generationJob.id.find(args.sourceJobId);
+  const target = source ? ctx.db.workspaceProject.id.find(source.projectId) : undefined;
+  if (!source || !target || !source.componentId || permission(ctx, target, ctx.sender) !== 'editor') denied();
+  const draft = ctx.db.componentDraft.jobId.find(source.id);
+  if (source.state !== 'draft_ready' || !isChatMode(source.mode) || (draft?.revision ?? 0n) !== args.expectedRevision) throw new SenderError('Draft changed. Review the latest saved version before sending.');
+  const item = detectEditorInstructions(draft?.files ?? JSON.parse(source.artifacts).files ?? []).find(item => item.key === args.instructionKey);
+  if (!item) throw new SenderError('Instruction is unavailable or ambiguous.');
+  const old = ctx.db.editorInstruction.key.find(`${source.componentId}:${item.key}`);
+  if (old?.jobId) {
+    const job = ctx.db.generationJob.id.find(old.jobId);
+    if (job && !['draft_ready', 'failed', 'cancelled'].includes(job.state)) throw new SenderError('This project already has an active generation job.');
+  }
+  if (old) ctx.db.editorInstruction.id.update({ ...old, sourceJobId: source.id, revision: args.expectedRevision, line: item.line, state: 'pending', jobId: 0n, updatedBy: ctx.sender, updatedAt: ctx.timestamp });
+  else insertEditorInstruction(ctx, source, args.expectedRevision, item);
+});
+export const dismissEditorInstruction = db.reducer({ instructionId: t.u64() }, (ctx, args) => {
+  user(ctx);
+  const row = ctx.db.editorInstruction.id.find(args.instructionId);
+  const target = row ? ctx.db.workspaceProject.id.find(row.projectId) : undefined;
+  if (!row || !target || permission(ctx, target, ctx.sender) !== 'editor') denied();
+  if (['pending', 'blocked'].includes(row.state)) ctx.db.editorInstruction.id.update({ ...row, state: 'dismissed', updatedAt: ctx.timestamp });
 });
 export const visibleComponentDrafts = db.view({ name: 'visible_component_drafts', public: true }, t.array(componentDraft.rowType), ctx =>
   accessibleProjects(ctx).flatMap(project => [...ctx.db.componentDraft.projectId.filter(project.id)]));
@@ -575,16 +641,20 @@ export const removeGeneration = db.reducer({ jobId: t.u64() }, (ctx, args) => {
   ctx.db.generationJob.id.delete(job.id);
 });
 
+function chatCredentials(tx: Ctx) {
+  const geminiKey = tx.env.GEMINI_API_KEY?.trim() ?? '';
+  const geminiModel = tx.env.GEMINI_MODEL?.trim() || GEMINI_MODEL;
+  const nvidiaKey = tx.env.NVIDIA_API_KEY?.trim() ?? '';
+  const nvidiaModel = tx.env.NVIDIA_MODEL?.trim() || NVIDIA_MODEL;
+  if ([geminiKey, nvidiaKey].some(key => key.length < 16 || key.length > 512 || /\s/.test(key)) || !/^gemini-[a-z0-9.-]+$/.test(geminiModel) || geminiModel.length > 120 || !/^nvidia\/[a-z0-9.-]*nemotron[a-z0-9.-]*$/.test(nvidiaModel)) throw new SenderError('ComPlix chat is not configured. Contact the operator.');
+  return { geminiKey, geminiModel, nvidiaKey, nvidiaModel };
+}
 export const generateProjectChat = db.procedure({ projectId: t.u64(), requestId: t.string(), request: t.string(), sourceJobId: t.option(t.u64()), expectedDraftRevision: t.option(t.u64()), componentId: t.option(t.u64()) }, t.unit(), (ctx, args) => {
   const claim = ctx.withTx(tx => {
     user(tx);
     const target = tx.db.workspaceProject.id.find(args.projectId);
     if (!target || permission(tx, target, tx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
-    const geminiKey = tx.env.GEMINI_API_KEY?.trim() ?? '';
-    const geminiModel = tx.env.GEMINI_MODEL?.trim() || GEMINI_MODEL;
-    const nvidiaKey = tx.env.NVIDIA_API_KEY?.trim() ?? '';
-    const nvidiaModel = tx.env.NVIDIA_MODEL?.trim() || NVIDIA_MODEL;
-    if ([geminiKey, nvidiaKey].some(key => key.length < 16 || key.length > 512 || /\s/.test(key)) || !/^gemini-[a-z0-9.-]+$/.test(geminiModel) || geminiModel.length > 120 || !/^nvidia\/[a-z0-9.-]*nemotron[a-z0-9.-]*$/.test(nvidiaModel)) throw new SenderError('ComPlix chat is not configured. Contact the operator.');
+    const { geminiKey, geminiModel, nvidiaKey, nvidiaModel } = chatCredentials(tx);
     const job = queueGeneration(tx, { ...args, scenario: 'success' }, 'gemini', nvidiaKey, geminiModel);
     if (job.snapshot.includes(geminiKey)) throw new SenderError('Remove credentials from the request or project context.');
     const call = job.state === 'queued';
@@ -592,19 +662,64 @@ export const generateProjectChat = db.procedure({ projectId: t.u64(), requestId:
     return { id: job.id, snapshot: job.snapshot, call, geminiKey, geminiModel, nvidiaKey, nvidiaModel };
   });
   if (!claim.call) return {};
+  executeChatJob(ctx, claim, ctx.sender);
+  return {};
+});
+type ChatClaim = { id: bigint; snapshot: string; geminiKey: string; geminiModel: string; nvidiaKey: string; nvidiaModel: string };
+export const runEditorInstruction = db.procedure({ instructionId: t.u64(), expectedRevision: t.u64() }, t.unit(), (ctx, args) => {
+  let claim: ChatClaim | undefined;
+  try { claim = ctx.withTx(tx => {
+    user(tx);
+    const record = tx.db.editorInstruction.id.find(args.instructionId);
+    const target = record ? tx.db.workspaceProject.id.find(record.projectId) : undefined;
+    if (!record || !target || permission(tx, target, tx.sender) !== 'editor') denied();
+    if (record.state !== 'pending') return undefined; // Atomic claim across collaborators/reconnects.
+    const technologies = target.framework || !target.outputStack ? target : { ...target, ...presetDetails(target.outputStack) };
+    if (!selectStackAdapter(technologies)) throw new SenderError('Unsupported target stack: generation requires a matching adapter.');
+    if (record.revision !== args.expectedRevision) throw new SenderError('Draft changed. Review the latest saved version before sending.');
+    const source = tx.db.generationJob.id.find(record.sourceJobId);
+    const draft = source ? tx.db.componentDraft.jobId.find(source.id) : undefined;
+    if (!source || source.projectId !== target.id || source.componentId !== record.componentId || source.state !== 'draft_ready' || !isChatMode(source.mode) || (draft?.revision ?? 0n) !== record.revision) throw new SenderError('Selected draft is unavailable. Select a saved draft from this project.');
+    const item = detectEditorInstructions(draft?.files ?? JSON.parse(source.artifacts).files ?? []).find(item => `${source.componentId}:${item.key}` === record.key);
+    if (!item) throw new SenderError('Instruction is unavailable or ambiguous.');
+    const { geminiKey, geminiModel, nvidiaKey, nvidiaModel } = chatCredentials(tx);
+    const job = queueGeneration(tx, { projectId: target.id, componentId: record.componentId, sourceJobId: source.id,
+      expectedDraftRevision: record.revision, requestId: `instruction-${record.id}-${record.updatedAt.microsSinceUnixEpoch}`,
+      request: `Editor instruction at ${item.path}:${item.line}\n${item.text}`, scenario: 'success',
+      editorInstruction: { id: record.id.toString(), path: item.path, text: item.text, line: item.line } }, 'gemini', nvidiaKey, geminiModel);
+    if (job.snapshot.includes(geminiKey)) throw new SenderError('Remove credentials from the request or project context.');
+    tx.db.editorInstruction.id.update({ ...record, state: 'submitted', jobId: job.id });
+    tx.db.generationJob.id.update({ ...job, state: 'generating' });
+    return { id: job.id, snapshot: job.snapshot, geminiKey, geminiModel, nvidiaKey, nvidiaModel };
+  }); } catch (cause) {
+    // Persist admission failures so remounting the editor does not implicitly retry them.
+    ctx.withTx(tx => {
+      try { user(tx); } catch { return; }
+      const record = tx.db.editorInstruction.id.find(args.instructionId);
+      const target = record ? tx.db.workspaceProject.id.find(record.projectId) : undefined;
+      if (record && target && permission(tx, target, tx.sender) === 'editor' && record.state === 'pending' && record.revision === args.expectedRevision) tx.db.editorInstruction.id.update({ ...record, state: 'blocked', updatedAt: tx.timestamp });
+    });
+    throw cause;
+  }
+  if (claim) executeChatJob(ctx, claim, ctx.sender);
+  return {};
+});
+/** Runs a claimed chat job and records its result. `actor` is the user the job belongs to; access is rechecked between steps. */
+function executeChatJob(ctx: ProcCtx, claim: ChatClaim, actor: Identity) {
   let artifacts = ''; let diagnostic = '';
+  const checkCurrent = (generating = false) => ctx.withTx(tx => {
+    const job = tx.db.generationJob.id.find(claim.id);
+    const target = job ? tx.db.workspaceProject.id.find(job.projectId) : undefined;
+    if (!tx.db.userProfile.identity.find(actor) || !job || !target || permission(tx, target, actor) !== 'editor' || !['generating', 'generating_code'].includes(job.state) || tx.timestamp.microsSinceUnixEpoch - job.createdAt.microsSinceUnixEpoch >= 90000000n || job.fingerprint !== generationFingerprint(tx, target.id) || !draftInputsCurrent(tx, job.snapshot)) throw new Error('Chat context changed or the request was cancelled. No further provider call was made.');
+    if (generating && job.state === 'generating') tx.db.generationJob.id.update({ ...job, state: 'generating_code' });
+  });
   try {
     artifacts = runComponentChat(claim, (url, body, key, timeoutMs) => {
+      checkCurrent();
       const response = ctx.http.fetch(url, { method: 'POST', timeout: new TimeDuration(BigInt(timeoutMs) * 1000n),
         headers: { 'Content-Type': 'application/json', ...(url.startsWith('https://generativelanguage.googleapis.com/') ? { 'x-goog-api-key': key } : { Authorization: 'Bearer ' + key }) }, body: JSON.stringify(body) });
       return { status: response.status, body: response.status === 200 ? response.text() : '' };
-    }, () => ctx.withTx(tx => {
-      if (!tx.db.userProfile.identity.find(tx.sender)) denied();
-      const job = tx.db.generationJob.id.find(claim.id);
-      const target = job ? tx.db.workspaceProject.id.find(job.projectId) : undefined;
-      if (!job || !target || permission(tx, target, tx.sender) !== 'editor' || !['generating', 'generating_code'].includes(job.state) || tx.timestamp.microsSinceUnixEpoch - job.createdAt.microsSinceUnixEpoch >= 90000000n || job.fingerprint !== generationFingerprint(tx, target.id) || !draftInputsCurrent(tx, job.snapshot)) throw new Error('Chat context changed or the request was cancelled. No further provider call was made.');
-      if (job.state === 'generating') tx.db.generationJob.id.update({ ...job, state: 'generating_code' });
-    }));
+    }, () => checkCurrent(true));
   } catch (cause) {
     // Error text from HTTP/runtime internals is never persisted.
     const message = cause instanceof Error ? cause.message : '';
@@ -612,18 +727,18 @@ export const generateProjectChat = db.procedure({ projectId: t.u64(), requestId:
     diagnostic = safe.includes(message) ? message : 'AI coordination could not complete safely or timed out. No automatic retry was made.';
   }
   ctx.withTx(tx => {
-    if (!tx.db.userProfile.identity.find(tx.sender)) denied();
+    if (!tx.db.userProfile.identity.find(actor)) denied();
     const job = tx.db.generationJob.id.find(claim.id);
     const target = job ? tx.db.workspaceProject.id.find(job.projectId) : undefined;
-    if (!job || !target || permission(tx, target, tx.sender) !== 'editor') denied();
+    if (!job || !target || permission(tx, target, actor) !== 'editor') denied();
     if (!['generating', 'generating_code'].includes(job.state)) return;
     const failure = tx.timestamp.microsSinceUnixEpoch - job.createdAt.microsSinceUnixEpoch >= 90000000n ? 'AI request exceeded its deadline. No automatic retry was made.' : job.fingerprint !== generationFingerprint(tx, target.id) || !draftInputsCurrent(tx, job.snapshot) ? 'Draft or project inputs changed during coordination. Your edits were preserved.' : diagnostic;
-    if (job.componentId) tx.db.componentChatMessage.insert({ id: 0n, componentId: job.componentId, projectId: job.projectId, senderIdentity: tx.sender, role: 'assistant', content: failure || JSON.parse(artifacts).reply, jobId: job.id, createdAt: tx.timestamp });
+    if (job.componentId) tx.db.componentChatMessage.insert({ id: 0n, componentId: job.componentId, projectId: job.projectId, senderIdentity: actor, role: 'assistant', content: failure || JSON.parse(artifacts).reply, jobId: job.id, createdAt: tx.timestamp });
     tx.db.generationJob.id.update({ ...job, state: failure ? 'failed' : 'draft_ready', artifacts: failure ? '' : artifacts,
       diagnostic: failure || 'Gemini coordinated this unverified draft. No compiler, sandbox, tests or executable preview have run. Not promoted to current.' });
   });
-  return {};
-});
+
+}
 
 function expireStaleGenerations(ctx: Ctx, projectId: bigint) {
   for (const job of ctx.db.generationJob.projectId.filter(projectId)) {
@@ -635,7 +750,9 @@ function expireStaleGenerations(ctx: Ctx, projectId: bigint) {
 // onSchedule callbacks are private to the scheduler/database owner, not callable by app clients.
 export const expireGeneration = db.reducer({ onSchedule: generationDeadline }, { timer: generationDeadline.rowType }, (ctx, { timer }) => {
   const job = ctx.db.generationJob.id.find(timer.jobId);
-  if (job && isChatMode(job.mode) && ['queued', 'generating', 'generating_code'].includes(job.state)) ctx.db.generationJob.id.update({ ...job, state: 'failed', diagnostic: 'AI request exceeded its deadline. No automatic retry was made. You can send a new message.' });
+  if (job && isChatMode(job.mode) && ['queued', 'generating', 'generating_code'].includes(job.state)) {
+    ctx.db.generationJob.id.update({ ...job, state: 'failed', diagnostic: 'AI request exceeded its deadline. No automatic retry was made. You can send a new message.' });
+  }
 });
 
 export const visibleComponents = db.view({ name: 'visible_components', public: true }, t.array(component.rowType), ctx => accessibleProjects(ctx).flatMap(project => [...ctx.db.component.projectId.filter(project.id)]));
@@ -644,19 +761,26 @@ export const createComponent = db.reducer({ projectId: t.u64(), name: t.string()
   user(ctx);
   const project = ctx.db.workspaceProject.id.find(args.projectId);
   if (!project || permission(ctx, project, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
-  const name = args.name.trim();
-  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(name) || !['common', 'composition'].includes(args.category)) throw new SenderError('Use a component name of 1-80 letters, numbers, hyphens or underscores.');
+  insertComponent(ctx, project, args.name, args.category);
+});
+/** Creates a component with a minimal placeholder draft so chat can edit it. */
+type ProjectWithStack = { id: bigint; outputStack: string; framework: string; language: string; styling: string; libraries: string; versions: string };
+function insertComponent(ctx: Ctx, project: ProjectWithStack, componentName: string, category: string, actor = ctx.sender) {
+  const name = componentName.trim();
+  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(name) || !['common', 'composition'].includes(category)) throw new SenderError('Use a component name of 1-80 letters, numbers, hyphens or underscores.');
   if ([...ctx.db.component.projectId.filter(project.id)].some(row => row.name.toLowerCase() === name.toLowerCase())) throw new SenderError('A component with that name already exists.');
-  const row = ctx.db.component.insert({ id: 0n, projectId: project.id, name, category: args.category, rootPath: (args.category === 'common' ? 'Common/' : 'Compositions/') + name, createdAt: ctx.timestamp });
+  const row = ctx.db.component.insert({ id: 0n, projectId: project.id, name, category, rootPath: (category === 'common' ? 'Common/' : 'Compositions/') + name, createdAt: ctx.timestamp });
   const files = [{ path: row.rootPath + '/README.md', content: '# ' + name + '\n\nUnverified starter draft. Describe the public API and examples here.' }];
   const target = project.framework || !project.outputStack ? project : { ...project, ...presetDetails(project.outputStack) };
   const adapter = selectStackAdapter(target);
   const symbol = /^[A-Za-z_]/.test(name) ? name.replace(/-/g, '_') : 'Component_' + name.replace(/-/g, '_');
   if (adapter?.id === 'react-tailwind-shadcn') files.push({ path: row.rootPath + '/' + symbol + '.tsx', content: 'export function ' + symbol + '() { return <div />; }\n' });
   if (adapter?.id === 'blazor-bootstrap') files.push({ path: row.rootPath + '/' + symbol + '.razor', content: '<div class="d-block"></div>\n' });
-  const job = ctx.db.generationJob.insert({ id: 0n, requestId: 'component:starter:' + row.id, projectId: project.id, requestedBy: ctx.sender, request: 'Starter: ' + name, state: 'draft_ready', mode: 'gemini', scenario: 'success', snapshot: '{}', fingerprint: generationFingerprint(ctx, project.id), artifacts: JSON.stringify({ reply: '', files }), diagnostic: 'Unverified starter; no generation or build has run.', createdAt: ctx.timestamp, model: '', componentId: row.id });
-  ctx.db.componentDraft.insert({ jobId: job.id, projectId: project.id, componentId: row.id, revision: 0n, files, updatedBy: ctx.sender, updatedAt: ctx.timestamp });
-});
+  const job = ctx.db.generationJob.insert({ id: 0n, requestId: 'component:starter:' + row.id, projectId: project.id, requestedBy: actor, request: 'Starter: ' + name, state: 'draft_ready', mode: 'gemini', scenario: 'success', snapshot: '{}', fingerprint: generationFingerprint(ctx, project.id), artifacts: JSON.stringify({ reply: '', files }), diagnostic: 'Unverified starter; no generation or build has run.', createdAt: ctx.timestamp, model: '', componentId: row.id });
+  ctx.db.componentDraft.insert({ jobId: job.id, projectId: project.id, componentId: row.id, revision: 0n, files, updatedBy: actor, updatedAt: ctx.timestamp });
+  return row;
+}
+
 export const clearComponentChat = db.reducer({ componentId: t.u64() }, (ctx, args) => {
   user(ctx);
   const component = ctx.db.component.id.find(args.componentId);
@@ -664,4 +788,58 @@ export const clearComponentChat = db.reducer({ componentId: t.u64() }, (ctx, arg
   if (!component || !project || permission(ctx, project, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
   for (const job of ctx.db.generationJob.projectId.filter(project.id)) if (job.componentId === component.id && ['queued','generating','generating_code'].includes(job.state)) ctx.db.generationJob.id.update({ ...job, state: 'cancelled', diagnostic: 'Conversation cleared. Draft files were preserved.' });
   for (const message of ctx.db.componentChatMessage.componentId.filter(component.id)) ctx.db.componentChatMessage.id.delete(message.id);
+});
+
+const previewSummary = t.object('ComponentPreviewSummary', { jobId: t.u64(), projectId: t.u64(), url: t.string(), revision: t.u64(), expiresAt: t.timestamp() });
+export const visibleComponentPreviews = db.view({ name: 'visible_component_previews', public: true }, t.array(previewSummary), ctx =>
+  accessibleProjects(ctx).flatMap(project => [...ctx.db.componentPreview.projectId.filter(project.id)].map(row => ({ jobId: row.jobId, projectId: row.projectId, url: previewUrl(row), revision: row.revision, expiresAt: row.expiresAt }))));
+
+/** Pushes the saved draft revision into the component's E2B sandbox, which builds and serves it. */
+export const buildComponentPreview = db.procedure({ jobId: t.u64(), expectedRevision: t.u64() }, t.unit(), (ctx, args) => {
+  const claim = ctx.withTx(tx => {
+    user(tx);
+    const job = tx.db.generationJob.id.find(args.jobId);
+    const target = job ? tx.db.workspaceProject.id.find(job.projectId) : undefined;
+    if (!job || !target || permission(tx, target, tx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
+    // Older projects keep their stack only in outputStack; use the same preset fallback as the views and chat.
+    const technologies = target.framework || !target.outputStack ? target : { ...target, ...presetDetails(target.outputStack) };
+    const kind = previewKind(technologies);
+    if (!kind) throw new SenderError(`${previewMessages.unsupported} This project is set to framework "${technologies.framework.slice(0, 60) || '(blank)'}", language "${technologies.language.slice(0, 60) || '(blank)'}".`);
+    const apiKey = tx.env.E2B_API_KEY?.trim() ?? '';
+    const templateId = (kind === 'react' ? tx.env.E2B_REACT_TEMPLATE : tx.env.E2B_BLAZOR_TEMPLATE)?.trim() ?? '';
+    const appOrigin = tx.env.PREVIEW_APP_ORIGIN?.trim() || 'http://127.0.0.1:5173';
+    if (apiKey.length < 16 || /\s/.test(apiKey) || !/^[A-Za-z0-9_-]{4,64}$/.test(templateId)) throw new SenderError(previewMessages.unconfigured);
+    const draft = tx.db.componentDraft.jobId.find(job.id);
+    if ((draft?.revision ?? 0n) !== args.expectedRevision) throw new SenderError('Draft changed. Review the latest saved version before previewing.');
+    let files: Array<{ path: string; content: string }> = draft?.files ?? [];
+    if (!draft) { try { files = JSON.parse(job.artifacts).files ?? []; } catch { files = []; } }
+    if (!files.length) throw new SenderError('Select a saved draft with files before previewing.');
+    // Without a hand-written preview entry, render the component's own file (generated host entry, not saved).
+    const componentName = tx.db.component.id.find(job.componentId)?.name ?? '';
+    try { files = withPreviewEntry(kind, files, componentName); } catch (cause) { throw new SenderError(cause instanceof Error ? cause.message : 'Invalid preview entry.'); }
+    const secrets = [apiKey, tx.env.NVIDIA_API_KEY?.trim(), tx.env.GEMINI_API_KEY?.trim()];
+    if (secrets.some(secret => secret && JSON.stringify(files).includes(secret))) throw new SenderError('Remove credentials from draft files.');
+    const existing = tx.db.componentPreview.jobId.find(job.id);
+    const live = existing && existing.expiresAt.microsSinceUnixEpoch > tx.timestamp.microsSinceUnixEpoch + 15000000n ? existing : undefined;
+    return { jobId: job.id, projectId: job.projectId, componentId: job.componentId, apiKey, templateId, appOrigin, files, existing: live };
+  });
+  let lease;
+  try {
+    lease = startSandboxBuild((request) => {
+      const response = ctx.http.fetch(request.url, { method: request.method, headers: request.headers, body: request.body, timeout: new TimeDuration(BigInt(request.timeoutMs) * 1000n) });
+      return { status: response.status, body: response.status < 500 ? response.text() : '' };
+    }, { apiKey: claim.apiKey, templateId: claim.templateId, appOrigin: claim.appOrigin, existing: claim.existing, revision: args.expectedRevision.toString(), files: claim.files });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : '';
+    throw new SenderError(message && !message.includes(claim.apiKey) ? message : previewMessages.create);
+  }
+  ctx.withTx(tx => {
+    const job = tx.db.generationJob.id.find(claim.jobId);
+    const target = job ? tx.db.workspaceProject.id.find(job.projectId) : undefined;
+    if (!job || !target || permission(tx, target, tx.sender) !== 'editor') denied();
+    const row = { jobId: claim.jobId, projectId: claim.projectId, componentId: claim.componentId, ...lease, revision: args.expectedRevision,
+      expiresAt: new Timestamp(tx.timestamp.microsSinceUnixEpoch + BigInt(PREVIEW_IDLE_SECONDS) * 1000000n), updatedAt: tx.timestamp };
+    if (tx.db.componentPreview.jobId.find(claim.jobId)) tx.db.componentPreview.jobId.update(row); else tx.db.componentPreview.insert(row);
+  });
+  return {};
 });

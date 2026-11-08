@@ -1,4 +1,4 @@
-import { Template } from 'e2b';
+import { Template, waitForPort } from 'e2b';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { previewProfiles } from '../generation/previewProfiles.mjs';
@@ -13,7 +13,8 @@ const context = path.resolve('generation/templates');
 let template = Template({ fileContextPath: context, fileIgnorePatterns: ['**/node_modules/**', '**/.env*', '**/bin/**', '**/obj/**'] })
   .fromImage(profile.image).setUser('root')
   .runCmd('mkdir -p /opt/complix/host /workspace && useradd -m -u 1500 -s /bin/bash complix && chown complix:complix /workspace')
-  .copy('build.py', '/opt/complix/build.py');
+  .copy('build.py', '/opt/complix/build.py')
+  .copy('agent.py', '/opt/complix/agent.py');
 const files = profile.kind === 'react'
   ? ['package.json', 'package-lock.json', 'main.tsx', 'styles.css', 'tsconfig.json', 'vite.config.mjs', 'index.html']
   : ['PreviewHost.csproj', 'Program.cs', 'App.razor', '_Imports.razor', 'NuGet.Config', 'wwwroot/index.html'];
@@ -33,11 +34,13 @@ if (profile.kind === 'react') {
   if (!/^[a-f0-9]{128}$/.test(checksum)) throw new Error('Cannot verify the pinned Bootstrap package.');
   template = template.runCmd(`curl -fsSL https://registry.npmjs.org/bootstrap/-/bootstrap-5.3.8.tgz -o /tmp/bootstrap.tgz && echo '${checksum}  /tmp/bootstrap.tgz' | sha512sum -c - && tar xzf /tmp/bootstrap.tgz -C /tmp package/dist/css/bootstrap.min.css && cp /tmp/package/dist/css/bootstrap.min.css /opt/complix/host/wwwroot/bootstrap.min.css && rm -rf /tmp/warmup /tmp/package /tmp/bootstrap.tgz /opt/complix/host/Library /opt/complix/host/bin /opt/complix/host/obj`);
 }
-template = template.runCmd('chmod -R a+rX /opt/complix && chmod -R go-w /opt/complix').setUser('complix');
+// The preview agent is the only long-running process; it serves built output on port 8080.
+template = template.runCmd('chmod -R a+rX /opt/complix && chmod -R go-w /opt/complix').setUser('complix')
+  .setStartCmd(`python3 /opt/complix/agent.py ${profile.kind}`, waitForPort(8080));
 mkdirSync('.local', { recursive: true });
 const logs = [];
 try {
-  const info = await Template.buildInBackground(template, `complix-${profile.kind}-preview-v1`, { apiKey: config.apiKey,
+  const info = await Template.buildInBackground(template, `complix-${profile.kind}-preview-v2`, { apiKey: config.apiKey,
     cpuCount: profile.cpuCount, memoryMB: profile.memoryMB, requestTimeoutMs: 60000 });
   console.log(`${profile.kind}: remote template build started (${info.buildId}).`);
   const end = Date.now() + 900000;
@@ -47,7 +50,8 @@ try {
     writeFileSync(`.local/e2b-${profile.kind}-build.log`, logs.slice(-400).join('\n'));
     if (status.status === 'error') throw new Error(status.reason?.message || 'Template build failed.');
     if (status.status === 'ready') {
-      config.templates[profile.id] = { templateId: info.templateId, buildId: info.buildId, versions: profile.versions, image: profile.image };
+      // agentTemplateId: sandbox-hosted preview template (agent start command); earlier IDs are retained as history.
+      config.templates[profile.id] = { ...config.templates[profile.id], agentTemplateId: info.templateId, agentBuildId: info.buildId, versions: profile.versions, image: profile.image };
       writeFileSync('.local/e2b-templates.json', JSON.stringify(config.templates, null, 2) + '\n');
       console.log(`${profile.kind}: template ready; private local template configuration saved.`);
       process.exit(0);

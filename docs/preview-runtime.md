@@ -1,31 +1,36 @@
-# Local adapter preview runtime
+# Sandbox-hosted preview runtime
 
-The same multi-file Code, Docs and Preview workspace serves every stack. React and Blazor currently have explicit build profiles; other requested stacks display unsupported status. Browser compilation is optional for future adapters. This implementation builds remotely and displays copied static output in a separate-origin sandboxed iframe.
+Constraint (owner, November 8, 2026): the application runs only SpacetimeDB and the frontend server. No other ComPlix server process exists. Previews therefore build **and are served** inside E2B sandboxes.
+
+## Flow
+
+1. The Preview view watches the selected draft. When a save is confirmed and edits have settled for about 1 second, the browser calls the SpacetimeDB procedure `build_component_preview(jobId, expectedRevision)`.
+2. The procedure checks the caller's edit access, the stack adapter and the exact saved revision, then reads the draft files from SpacetimeDB. Using the operator's `E2B_API_KEY` from protected module configuration, it either:
+   - extends a live sandbox's idle timeout and pushes the new files to it, or
+   - creates a sandbox from the stack's template (no outbound internet; public inbound traffic only), claims the in-sandbox agent once (receiving a write key and a random capability path), then pushes the files.
+3. The private `component_preview` table stores the lease. The write key and sandbox ID never leave it. The `visible_component_previews` view gives authorized project members only the capability URL, revision and expiry.
+4. The agent (`generation/templates/agent.py`) builds in the background with the trusted fixed-command runner (`build.py`) and serves the latest successful output at `https://8080-<sandbox>.e2b.app/<capability>/` with a restrictive CSP whose `frame-ancestors` is the app origin. The browser polls `<capability>/__status` and shows a loading overlay over the previous render, then reloads the iframe when the new revision is built. Failed builds keep the previous render and show the build log.
+
+Rebuilds reuse the same sandbox, so toolchain caches stay warm. Measured live on November 8, 2026: React's first build took about 12 s and a rebuild about 3 s; Blazor's took about 41 s and 14 s. Sandboxes expire 10 minutes after the last save. Nothing else needs cleanup.
 
 ## Operator setup
 
-Use the project's Node 24.22.2 toolchain. Keep `E2B_API_KEY` in ignored `.local/backend.env`. Template provisioning writes private mappings to `.local/e2b-templates.json`; the initial React and Blazor templates have already been provisioned for this workspace.
-
-1. Start the local SpacetimeDB backend and frontend normally.
-2. Run `npm run preview:start` in a separate terminal.
-3. Add `VITE_PREVIEW_CONTROLLER_URL=http://127.0.0.1:3001` to the ignored frontend `.env.local`, then restart Vite. This URL is public configuration, never a credential.
-4. Select a real generated draft, edit its files, and choose **Build preview**. Builds consume E2B credits; opening the Preview tab alone does not provision a sandbox.
-
-Defaults are frontend `http://127.0.0.1:5173`, SpacetimeDB `http://127.0.0.1:3000`, database `complix-local`, controller port `3001`. Override with backend-only `PREVIEW_APP_ORIGIN`, `PREVIEW_SPACETIME_URI`, `PREVIEW_SPACETIME_DATABASE`, `PREVIEW_CONTROLLER_PORT` when your local setup differs. The frontend origin must match exactly.
-
-For an explicitly authorized template update, run `npm run preview:template -- react` and then `npm run preview:template -- blazor` sequentially. These provision remote resources and incur costs. `npm run preview:verify` runs short paid verification sandboxes for both trusted fixtures, clicks their rendered buttons, checks parent-frame isolation, and saves evidence under ignored `.local/`. No model call is involved. Template polling stops after 15 minutes; a remote build can continue after polling stops, so inspect its status before retrying.
+1. Keep `E2B_API_KEY` (and optionally `PREVIEW_APP_ORIGIN`, default `http://127.0.0.1:5173`) in ignored `.local/backend.env`.
+2. Template IDs are read from `.local/e2b-templates.json` (`agentTemplateId`). Both agent templates were provisioned on November 8, 2026. Re-provisioning (`npm run preview:template -- react`, then `-- blazor`) is paid.
+3. Run `npm run backend:publish`. The publisher passes `E2B_API_KEY`, `PREVIEW_APP_ORIGIN`, `E2B_REACT_TEMPLATE` and `E2B_BLAZOR_TEMPLATE` into the module environment. No frontend configuration is needed.
+4. The live opt-in check, `npm run preview:verify`, builds, clicks, rebuilds and checks parent isolation for both stacks. It uses credits.
 
 ## Build conventions
 
-- React: `examples/Preview.tsx` exports the default demonstration component. Other component files remain in the same saved file set. The host provides React 19.3.1, TypeScript 7.0.2, Tailwind 4.3.5 and Vite 8.3.6 with the pinned Radix/shadcn-compatible utilities listed in `generation/templates/react/package.json`. Unsupported dependencies fail explicitly.
-- Blazor: `Examples/Preview.razor` uses namespace `ComPlixPreview.Library.Examples`. The internal host uses standalone Blazor WebAssembly, .NET SDK 10.0.403/runtime 10.0.14 and Bootstrap 5.3.8. This is how the preview runs in a browser; it does not require consuming applications to adopt that render mode. Additional NuGet dependencies are not automatically downloaded.
+- **React:** `examples/Preview.tsx` default-exports the demo. The host has React 19.3.1, TypeScript 7.0.2, Tailwind 4.3.5, Vite 8.3.6 and the pinned Radix/shadcn-compatible utilities in `generation/templates/react/package.json`.
+- **Blazor:** `Examples/Preview.razor` uses namespace `ComPlixPreview.Library.Examples`. The host is standalone Blazor WebAssembly on .NET SDK 10.0.403 with Bootstrap 5.3.8. This is preview-only and does not dictate the consuming app's render mode.
+- **Other stacks:** each new stack needs its own template plus an adapter/profile entry. Until then it is shown as unsupported.
 
-Trusted hosts and dependency caches are baked into templates. Candidate files cannot replace the runner or host configuration. Compilation runs as a non-root user with internet disabled, no application/provider credentials, a 180-second sandbox lifetime and bounded source/artifact sizes. The sandbox is killed after artifact collection or failure. Only copied static bytes reach the browser; generated servers never receive application requests.
+## Security and limits
 
-## Authorization and limits
+- **Sandbox:** the agent runs as a non-root user. Outbound internet is blocked; this was verified live. The sandbox holds no provider or application credentials. Source is limited to 256 KiB / 40 files, and paths are validated by both the procedure and the agent.
+- **Capability URL:** the preview URL is a secret link. Anyone holding it can view the preview until the sandbox expires, because there is no per-request access recheck. Generated code is served from E2B's origin, so it cannot reach application cookies, storage or the parent page.
+- **Not validation:** a successful preview does not promote the draft, establish component tests or synchronize exports.
+- **Concurrency:** two concurrent first builds for the same draft can briefly create two sandboxes. The later one wins and the other expires on its idle timeout.
 
-The loopback controller accepts a user's bearer token and project/job/revision identifiers. SpacetimeDB verifies identity and edit access; the controller reads authorized saved source and checks it again after compilation. It accepts no browser-supplied files or commands. Asset requests recheck access, and previews expire after at most five minutes or token expiry. One build runs at a time and at most four preview leases are retained.
-
-Each artifact gets a dedicated loopback host and ephemeral port, capability path and restrictive CSP. The iframe allows scripts and its own origin so framework assets can load, while the separate host isolates application cookies/storage and parent DOM access. Previously used hosts are recorded privately and never reused; a stale address-allocation lock fails closed. This local HTTP service is a development integration, not hosted production preview delivery. CSP and iframe isolation are not a complete browser malware containment guarantee.
-
-Autosave precedes build; changed source requires an explicit rebuild. Failed replacements retain the previous preview and saved draft. A compiled preview does not promote the draft, establish comprehensive component tests, synchronize exports or implement recovery. Trusted validation/promotion authority and production routing remain future work.
+The earlier loopback Node controller and gateway (`npm run preview:start`) were removed by this change; see decisions.md.

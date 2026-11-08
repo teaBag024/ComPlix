@@ -5,7 +5,6 @@ import path from 'node:path';
 import { randomUUID, sign } from 'node:crypto';
 import { DbConnection, tables } from '../src/module_bindings';
 import { ensureLocalKeys } from '../scripts/local-keys.mjs';
-import { createPreviewAuthorizer } from '../generation/previewAuthorization.mjs';
 
 const backendPort = Number(process.env.COMPLIX_TEST_BACKEND_PORT ?? 3100);
 const uri = `http://127.0.0.1:${backendPort}`;
@@ -38,6 +37,7 @@ async function startServer() {
     'start', '--listen-addr', `127.0.0.1:${backendPort}`, '--data-dir', path.join(runDirectory, 'data'),
     '--jwt-priv-key-path', keys.privateKeyPath, '--jwt-pub-key-path', keys.publicKeyPath, '--non-interactive',
   ], { stdio: 'ignore', windowsHide: true });
+
   await expect.poll(async () => {
     try { return (await fetch(uri + '/v1/ping')).ok; } catch { return false; }
   }, { timeout: 20000 }).toBe(true);
@@ -89,7 +89,7 @@ async function connect(token: string, register = true): Promise<Session> {
           ctx.subscriptionBuilder().onApplied(() => {
             clearTimeout(timeout); resolve({ conn: ctx, token });
           }).onError(() => { clearTimeout(timeout); reject(new Error('Subscription denied')); })
-            .subscribe(register ? [tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponents, tables.visibleComponentChat, tables.generationSettings] : tables.myProject);
+            .subscribe(register ? [tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponents, tables.visibleComponentChat, tables.visibleEditorInstructions, tables.generationSettings] : tables.myProject);
         };
         void initialize().catch(() => { clearTimeout(timeout); reject(new Error('Profile denied')); });
       }).onConnectError(() => { clearTimeout(timeout); reject(new Error('Connection denied')); })
@@ -153,8 +153,15 @@ test.beforeAll(async () => {
     if (url.startsWith('https://generativelanguage.googleapis.com/')) {
       if (options.headers['x-goog-api-key'] !== 'synthetic-operator-gemini-credential' || options.body.includes('synthetic-operator-') || body.generationConfig.thinkingConfig.thinkingLevel !== 'LOW') throw new Error('Gemini fixture contract failed');
       const snapshot = JSON.parse(body.contents[0].parts[0].text);
+      if (snapshot.editorInstruction?.text === 'Cancel instruction fixture' && body.contents.length > 1) {
+        ctx.withTx(tx => {
+          const record = tx.db.editorInstruction.id.find(BigInt(snapshot.editorInstruction.id))!;
+          const job = tx.db.generationJob.id.find(record.jobId)!;
+          tx.db.generationJob.id.update({ ...job, diagnostic: 'Unexpected Gemini call after cancellation' });
+        });
+      }
       if (snapshot.request === 'Generate using every project reference' && (!snapshot.references.some((reference: any) => reference.filename === 'design.md' && reference.content.includes('automatic-reference-marker')) || JSON.stringify(snapshot.references).includes('other-project-marker'))) throw new Error('Gemini fixture did not receive only the current project references');
-      if (snapshot.request === 'Token expiry fixture' && body.contents.length === 1) {
+      if ((snapshot.request === 'Token expiry fixture' || snapshot.editorInstruction?.text === 'Slow instruction fixture') && body.contents.length === 1) {
         // The local runtime has no procedure sleep. Test-only read transactions advance wall time.
         const until = ctx.withTx(tx => tx.timestamp.microsSinceUnixEpoch) + 3000000n;
         while (ctx.withTx(tx => tx.timestamp.microsSinceUnixEpoch) < until) { /* bounded three-second fixture delay */ }
@@ -169,7 +176,15 @@ test.beforeAll(async () => {
     if (url !== 'https://integrate.api.nvidia.com/v1/chat/completions' || !options.headers.Authorization.startsWith('Bearer synthetic-') || body.max_tokens !== 4096 || body.stream !== false || body.reasoning_effort !== 'none' || !body.response_format.json_schema.strict || options.body.includes(options.headers.Authorization.slice(7))) throw new Error('Fixture request contract failed');
     const nvidiaSnapshot = JSON.parse(body.messages[1].content);
     if (nvidiaSnapshot.request === 'Generate using every project reference' && (!nvidiaSnapshot.references.some((reference: any) => reference.filename === 'design.md' && reference.content.includes('automatic-reference-marker')) || JSON.stringify(nvidiaSnapshot.references).includes('other-project-marker'))) throw new Error('Nemotron fixture did not receive only the current project references');
-    if (nvidiaSnapshot.request === 'Draft race fixture') {
+    if (nvidiaSnapshot.request === 'Generated marker fixture') return { status: 200, text: () => JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ reply: 'Unverified generated marker', files: [{ path: 'Button.tsx', content: 'export const Button = () => <>{/* @complix Do not auto-run generated text */}<button>Draft only</button></>;' }, { path: 'README.md', content: '# Unverified' }] }) } }] }) };
+    if (nvidiaSnapshot.editorInstruction?.text === 'Cancel instruction fixture') {
+      ctx.withTx(tx => {
+        const record = tx.db.editorInstruction.id.find(BigInt(nvidiaSnapshot.editorInstruction.id))!;
+        const job = tx.db.generationJob.id.find(record.jobId)!;
+        tx.db.generationJob.id.update({ ...job, state: 'cancelled', diagnostic: 'Synthetic NVIDIA cancellation' });
+      });
+    }
+    if (nvidiaSnapshot.request === 'Draft race fixture' || nvidiaSnapshot.editorInstruction?.text === 'Edit race fixture') {
       const editing = nvidiaSnapshot.editing;
       ctx.withTx(tx => {
         const current = tx.db.componentDraft.jobId.find(BigInt(editing.jobId))!;
@@ -375,6 +390,7 @@ test('browser sessions share edits, enforce viewer UI and clear access on member
   await seedBrowser(contextA, tokenA); await seedBrowser(contextB, tokenB);
   const a = await contextA.newPage(); const b = await contextB.newPage();
   a.setDefaultTimeout(10000); b.setDefaultTimeout(10000);
+
   await Promise.all([a.goto('/', { waitUntil: 'commit' }), b.goto('/', { waitUntil: 'commit' })]);
   await Promise.all([
     a.getByRole('button', { name: 'Organizations', exact: true }).waitFor({ timeout: 30000 }),
@@ -1121,24 +1137,19 @@ test('disabled generation configuration denies new jobs and publishes no provide
 });
 
 
-test('preview controller reads only authorized saved source and rejects stale or cross-project requests', async () => {
+test('sandbox preview procedure enforces edit access and configuration before any provider call', async () => {
   const owner = await connect(await makeToken('preview-source-owner@example.test', 'Preview Source Owner'));
   const outsider = await connect(await makeToken('preview-source-outsider@example.test', 'Preview Source Outsider'));
   await owner.conn.reducers.createProjectWithDetails({ name: 'Preview source', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
   const project = [...owner.conn.db.visibleProjects.iter()][0];
   await owner.conn.procedures.generateProjectChat({ projectId: project.id, requestId: randomUUID(), request: 'Create a preview Button' });
   const job = [...owner.conn.db.visibleGenerationJobs.iter()][0];
-  const authorizer = createPreviewAuthorizer({ uri, database });
-  const request = { projectId: String(project.id), jobId: String(job.id), revision: '0' };
-  const initial = await authorizer.source(owner.token, request);
-  expect(initial.target.framework).toBe('React'); expect(initial.files[0].path).toBe('Button.tsx');
-  const files = [{ path: 'examples/Preview.tsx', content: 'export default function Preview(){return <button>Saved edit</button>}' }];
-  await owner.conn.reducers.saveComponentDraft({ jobId: job.id, expectedRevision: 0n, files });
-  const edited = await authorizer.source(owner.token, { ...request, revision: '1' });
-  expect(edited.files).toEqual(files);
-  await expect(authorizer.source(owner.token, request)).rejects.toThrow('Draft changed');
-  await expect(authorizer.source(outsider.token, { ...request, revision: '1' })).rejects.toThrow('access');
-  await expect(authorizer.source(owner.token, { ...request, projectId: '1 OR 1=1' })).rejects.toThrow('identifier');
+  const reason = async (promise: Promise<unknown>) => { try { await promise; return 'resolved'; } catch (cause) { return String(cause instanceof Error ? cause.message : cause); } };
+  expect(await reason(outsider.conn.procedures.buildComponentPreview({ jobId: job.id, expectedRevision: 0n }))).toContain('Project edit access is required.');
+  // The isolated test module has no E2B configuration, so no sandbox is ever requested.
+  expect(await reason(owner.conn.procedures.buildComponentPreview({ jobId: job.id, expectedRevision: 0n }))).toContain('Previews are not configured.');
+  expect([...owner.conn.db.visibleComponentPreviews.iter()]).toHaveLength(0);
+  expect([...outsider.conn.db.visibleComponentPreviews.iter()]).toHaveLength(0);
 });
 
 test('editable drafts enforce access and revisions; selected edits enter chat without changing immutable results', async () => {
@@ -1325,7 +1336,7 @@ test('project chat uses operator credentials, retains conversation and never ask
   expect((await page.content()).includes('synthetic-operator-gemini-credential')).toBe(false);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.getByText('No published components yet')).toHaveCount(0);
-  await expect(page.getByText(/No generated preview has run/)).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Previews are not configured.' })).toBeVisible();  // Auto-build is rejected before any provider call.
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.reload();
   await expect(page.getByLabel('Project conversation')).toContainText('Common foundation first');
@@ -1607,4 +1618,149 @@ test('saved history does not block live chat and mock history limits do not coun
   expect(rejected).toContain('Chat limit reached');
   expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(45);
   expect([...owner.conn.db.visibleComponentDrafts.iter()]).toEqual(before);
+});
+
+async function instructionProject(label: string, framework = 'React') {
+  const token = await makeToken(label + '@example.test', label);
+  const owner = await connect(token);
+  await owner.conn.reducers.createProjectWithDetails({ name: label, organizationId: 0n, framework, language: framework === 'React' ? 'TypeScript' : 'C#', styling: '', libraries: '', versions: '' });
+  const project = [...owner.conn.db.visibleProjects.iter()].find(row => row.name === label)!;
+  await owner.conn.reducers.createComponent({ projectId: project.id, name: 'Button', category: 'common' });
+  const component = [...owner.conn.db.visibleComponents.iter()].find(row => row.projectId === project.id)!;
+  const source = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.componentId === component.id)!;
+  const original = JSON.parse(source.artifacts).files as Array<{ path: string; content: string }>;
+  const path = original.find(file => file.path.endsWith(framework === 'React' ? '.tsx' : '.razor'))!.path;
+  const files = (text: string) => original.map(file => file.path === path ? { ...file, content: framework === 'React'
+    ? `export const Button = () => <>{/* @complix ${text} */}<button>Save</button></>;`
+    : `@* @complix ${text} *@\n<button>Save</button>\n@code { string Label = "Save"; }` } : file);
+  return { owner, token, project, component, source, original, files, path };
+}
+
+test('editor instructions verify saved comments, deduplicate, isolate access and preserve rate counters', async () => {
+  const { owner, project, component, source, files } = await instructionProject('instruction-backend');
+  const outsider = await connect(await makeToken('instruction-outsider@example.test', 'Instruction outsider'));
+  await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 0n, files: files('Make this green') });
+  const records = () => [...owner.conn.db.visibleEditorInstructions.iter()].filter(row => row.componentId === component.id);
+  const instruction = records()[0];
+  expect(instruction.state).toBe('pending');
+  expect([...outsider.conn.db.visibleEditorInstructions.iter()]).toHaveLength(0);
+  expect(await outsider.conn.procedures.runEditorInstruction({ instructionId: instruction.id, expectedRevision: 1n }).then(() => 'unexpected success', error => String(error))).toContain('Access denied');
+  await expect(outsider.conn.reducers.dismissEditorInstruction({ instructionId: instruction.id })).rejects.toThrow();
+  expect(await owner.conn.procedures.runEditorInstruction({ instructionId: instruction.id, expectedRevision: 0n }).then(() => 'unexpected success', error => String(error))).toContain('Draft changed');
+  await expect(owner.conn.reducers.enableEditorInstruction({ sourceJobId: source.id, expectedRevision: 1n, instructionKey: 'forged' })).rejects.toThrow('unavailable');
+  const run = () => owner.conn.procedures.runEditorInstruction({ instructionId: instruction.id, expectedRevision: 1n });
+  await Promise.all([run(), run()]);
+  const linked = records()[0];
+  const result = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.id === linked.jobId)!;
+  expect(result.state).toBe('draft_ready');
+  expect(JSON.parse(result.snapshot).editorInstruction).toMatchObject({ path: instruction.path, text: 'Make this green' });
+  expect(JSON.parse(result.snapshot).origin).toBe('editor_comment');
+  const count = [...owner.conn.db.visibleGenerationJobs.iter()].length;
+  await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 1n, files: files('Make this green').map(file => ({ ...file, content: '\n' + file.content })) });
+  expect(records()).toHaveLength(1);
+  expect(records()[0].state).toBe('submitted');
+  await owner.conn.reducers.clearComponentChat({ componentId: component.id });
+  await run();
+  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(count);
+  expect(records()[0].jobId).toBe(result.id);
+  // The automatic request consumed one of the shared five-per-minute slots.
+  for (let i = 0; i < 4; i++) await owner.conn.procedures.generateProjectChat({ projectId: project.id, componentId: component.id, requestId: randomUUID(), request: 'Explain the library' });
+  expect(await owner.conn.procedures.generateProjectChat({ projectId: project.id, componentId: component.id, requestId: randomUUID(), request: 'Explain the library' }).then(() => 'unexpected success', error => String(error))).toContain('Chat limit reached');
+});
+
+test('Razor instructions preserve cancelled or concurrently edited drafts and never apply late files', async () => {
+  for (const text of ['Cancel instruction fixture', 'Edit race fixture']) {
+    const { owner, component, source, files } = await instructionProject('instruction-' + (text.startsWith('Cancel') ? 'cancel' : 'race'), 'Blazor');
+    const saved = files(text);
+    await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 0n, files: saved });
+    const instruction = [...owner.conn.db.visibleEditorInstructions.iter()].find(row => row.componentId === component.id)!;
+    await owner.conn.procedures.runEditorInstruction({ instructionId: instruction.id, expectedRevision: 1n });
+    const record = [...owner.conn.db.visibleEditorInstructions.iter()].find(row => row.id === instruction.id)!;
+    const result = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.id === record.jobId)!;
+    expect(result.state).toBe(text.startsWith('Cancel') ? 'cancelled' : 'failed');
+    expect(result.artifacts).toBe('');
+    const draft = [...owner.conn.db.visibleComponentDrafts.iter()].find(row => row.jobId === source.id)!;
+    if (text.startsWith('Cancel')) {
+      expect(result.diagnostic).toBe('Synthetic NVIDIA cancellation');
+      expect(draft.files).toEqual(saved);
+    } else {
+      expect(draft.revision).toBe(2n);
+      expect(draft.files.every(file => file.content.includes('concurrent edit'))).toBe(true);
+    }
+  }
+});
+
+for (const framework of ['React', 'Blazor']) test(`${framework} editor instructions run automatically after autosave and do not replay on reload`, async ({ browser }) => {
+  test.setTimeout(120000);
+  const { owner, token, project, component, source, files, path: sourcePath } = await instructionProject('instruction-browser-' + framework, framework);
+  const context = await browser.newContext(); await seedBrowser(context, token);
+  const page = await context.newPage(); await page.goto(`/projects/${project.id}/components?selected=${component.id}`);
+  const select = page.getByLabel('Candidate file', { exact: true });
+  await select.selectOption(sourcePath);
+  const editor = page.getByLabel('Candidate code', { exact: true });
+  const modified = files('Make this green').find(file => file.path === sourcePath)!.content;
+  await editor.fill(modified);
+  await expect(page.getByTestId('draft-save-status')).toHaveText('Draft saved');
+  await expect.poll(() => [...owner.conn.db.visibleGenerationJobs.iter()].filter(row => JSON.parse(row.snapshot).origin === 'editor_comment').length).toBe(1);
+  await expect(editor).toHaveValue(/Draft only/);
+  const instruction = [...owner.conn.db.visibleEditorInstructions.iter()].find(row => row.componentId === component.id)!;
+  expect(instruction.jobId).not.toBe(0n);
+  // Force adoption of a source containing an inherited marker: it remains inert on reload.
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Chat: Button', exact: true })).toBeVisible();
+  await page.waitForTimeout(3000);
+  expect([...owner.conn.db.visibleGenerationJobs.iter()].filter(row => JSON.parse(row.snapshot).origin === 'editor_comment')).toHaveLength(1);
+  expect([...owner.conn.db.visibleComponentDrafts.iter()].find(row => row.jobId === source.id)!.files.find(file => file.path === sourcePath)!.content).toBe(modified);
+  await context.close();
+});
+
+test('instruction admission rejects oversized context and removed comments without spending a job', async () => {
+  const { owner, project, component, source, original, files } = await instructionProject('instruction-context');
+  await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 0n, files: files('Make this green') });
+  const instruction = [...owner.conn.db.visibleEditorInstructions.iter()].find(row => row.componentId === component.id)!;
+  await owner.conn.reducers.uploadReference({ projectId: project.id, filename: 'large.txt', purpose: 'design', bytes: new TextEncoder().encode('a'.repeat(65536)) });
+  const count = [...owner.conn.db.visibleGenerationJobs.iter()].length;
+  expect(await owner.conn.procedures.runEditorInstruction({ instructionId: instruction.id, expectedRevision: 1n }).then(() => 'unexpected success', error => String(error))).toContain('64 KiB');
+  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(count);
+  expect([...owner.conn.db.visibleEditorInstructions.iter()].find(row => row.id === instruction.id)!.jobId).toBe(0n);
+  await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 1n, files: original });
+  expect([...owner.conn.db.visibleEditorInstructions.iter()].find(row => row.id === instruction.id)!.state).toBe('dismissed');
+  await owner.conn.procedures.runEditorInstruction({ instructionId: instruction.id, expectedRevision: 1n });
+  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(count);
+});
+
+test('editor Stop generation preserves code and prevents late instruction acceptance', async ({ browser }) => {
+  test.setTimeout(120000);
+  const { owner, token, project, component, source, files, path: sourcePath } = await instructionProject('instruction-browser-stop');
+  const context = await browser.newContext(); await seedBrowser(context, token);
+  const page = await context.newPage(); await page.goto(`/projects/${project.id}/components?selected=${component.id}`);
+  await page.getByLabel('Candidate file', { exact: true }).selectOption(sourcePath);
+  const editor = page.getByLabel('Candidate code', { exact: true });
+  const content = files('Slow instruction fixture').find(file => file.path === sourcePath)!.content;
+  await editor.fill(content);
+  const region = page.getByRole('region', { name: 'Editor instructions', exact: true });
+  await region.getByRole('button', { name: 'Stop generation', exact: true }).click();
+  await expect.poll(() => [...owner.conn.db.visibleGenerationJobs.iter()].find(row => JSON.parse(row.snapshot).origin === 'editor_comment')?.state).toBe('cancelled');
+  await page.waitForTimeout(3500);
+  await expect(editor).toHaveValue(content);
+  const stopped = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => JSON.parse(row.snapshot).origin === 'editor_comment')!;
+  expect(stopped.artifacts).toBe('');
+  expect([...owner.conn.db.visibleComponentDrafts.iter()].find(row => row.jobId === source.id)!.files.find(file => file.path === sourcePath)!.content).toBe(content);
+  await context.close();
+});
+
+test('provider-generated instruction markers stay inert through unrelated editor saves', async () => {
+  const { owner, project, component } = await instructionProject('instruction-inherited');
+  await owner.conn.procedures.generateProjectChat({ projectId: project.id, componentId: component.id, requestId: randomUUID(), request: 'Generated marker fixture' });
+  const generated = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.request === 'Generated marker fixture')!;
+  expect(generated.state).toBe('draft_ready');
+  const files = JSON.parse(generated.artifacts).files as Array<{ path: string; content: string }>;
+  expect(files.some(file => file.content.includes('@complix'))).toBe(true);
+  const records = () => [...owner.conn.db.visibleEditorInstructions.iter()].filter(row => row.componentId === component.id);
+  expect(records()).toHaveLength(0);
+  await owner.conn.reducers.saveComponentDraft({ jobId: generated.id, expectedRevision: 0n, files: files.map(file => ({ ...file, content: file.content + '\n' })) });
+  expect(records()).toHaveLength(0);
+  await owner.conn.reducers.enableEditorInstruction({ sourceJobId: generated.id, expectedRevision: 1n, instructionKey: JSON.stringify(['button.tsx', 'Do not auto-run generated text']) });
+  expect(records()).toHaveLength(1);
+  expect(records()[0].state).toBe('pending');
 });

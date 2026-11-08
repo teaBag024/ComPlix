@@ -533,3 +533,76 @@ Owner authorized fixing the live mismatch using the new implementation. Ran npm.
 ## Remove the lifetime chat-history blocker - November 8, 2026
 
 The 20-job project cap counted component starters and real discussion/generation turns, preventing further chat even after clearing transcripts. Restricted it to the developer mock workflow and count only mock rows. Existing history and draft checkpoints are retained; real chat continues without lifetime history slots. The persistent five-request/minute counter and active-job guard remain unchanged. Added coverage for 20 starter drafts, live discussion beyond that point, 20 terminal mock jobs, rejection of the 21st mock, continued live chat after the mock cap, unchanged drafts/history and rate limiting after transcript clear. Builds and frontend/module typechecks passed; both focused backend tests passed (exit 0, frontend 52373/backend 52300, database complix-chat-history), and git diff --check passed. Published the correction to local complix-local with --delete-data=never; build/publication succeeded with no schema migration listed. Run-specific test Vite was stopped for Windows teardown; application servers were preserved. No live provider call or history deletion.
+
+
+## Sandbox-hosted previews - November 8, 2026
+
+The preview did not work because the frontend only connected when `VITE_PREVIEW_CONTROLLER_URL` and a separate `npm run preview:start` Node controller were configured; neither was. The owner then added a constraint: ComPlix runs only SpacetimeDB and the frontend server. The new design follows it. A SpacetimeDB procedure (`build_component_preview`) authorizes the editor and the saved revision, then pushes draft files into an E2B sandbox. A preview agent baked into each template builds in the background and serves the result on the sandbox origin under a random capability path. The frontend rebuilds automatically about 1 s after each confirmed save, shows a loading overlay over the last good render, reloads the iframe when the new revision is built, and shows build logs on failure. Sandboxes are reused across saves with a 10-minute idle timeout.
+
+Changes:
+- **Added:** `generation/templates/agent.py`, `shared/sandboxPreview.ts`, a private `component_preview` table, the `visible_component_previews` view and the procedure.
+- **Rewritten:** `StackPreview.tsx`.
+- **Updated:** `build.py` now uses a persistent build directory for incremental Blazor builds. The publish script passes `E2B_API_KEY`, `PREVIEW_APP_ORIGIN` and the agent template IDs.
+- **Removed:** the loopback controller, gateway, address and authorization modules, `previewRuntime.ts`, the harness fixture and the controller test.
+- **Provisioned (paid, owner-directed E2B use):** React and Blazor agent templates (`agentTemplateId` in `.local/e2b-templates.json`). Earlier template IDs are retained.
+
+Validation actually run:
+- **Builds:** frontend/module strict typechecks and the production build passed (existing >500 kB chunk warning). The backend module compiled and bindings were regenerated.
+- **Full Playwright regression:** 63 passed and 2 skipped (the opt-in live specs), exit 0, on frontend 52973 / backend 52900 / database complix-sandbox-preview. An earlier run failed one chat test that asserted the old "not connected" text; it now asserts that the auto-build is rejected as unconfigured, before any provider call, in the test module.
+- **New unit and agent tests:** the E2B call sequence with mocked transport covers offline create, public ingress, claim, reuse with timeout extension, replacement of dead sandboxes, fixed error messages and no API key sent to the sandbox. The real Python agent was tested against a stub build: single claim, write-key authorization, path rejection, loading page then self-reload, failed rebuild keeping the previous output, latest-revision-wins and CSP `frame-ancestors`.
+- **Live E2B (`npm run preview:verify`):** both stacks built, rendered, responded to clicks, rebuilt in place on a new revision and were isolated from the parent frame. Timings: React 12 s first build / 3 s rebuild; Blazor 41 s / 14 s. A separate probe confirmed uid 1500 (non-root), no provider environment variables, and blocked outbound HTTPS. Discovered that offline sandboxes require E2B's traffic-token header for inbound requests unless `network.allowPublicTraffic: true` is set; that flag is now set explicitly.
+
+Not done:
+- **Local publication:** the module has not been published to `complix-local`, so the running app still has the old API. Run `npm.cmd run backend:publish` (data-preserving), then reload.
+- **Real-account acceptance:** an end-to-end check through the signed-in UI with a real generated component is still pending.
+- **Remaining scope:** hosted routing, validation/promotion and exports remain open.
+- **Defaults chosen without owner answers:** secret-link access, offline-only dependencies and a 10-minute idle timeout (recorded in decisions.md).
+- **Old runtime code:** `generation/e2bRuntime.mjs` is retained only for template-log sanitizing and its legacy contract test.
+
+No commit or push for this increment.
+
+## Preview follow-up: stack matching and session renewal - November 8, 2026
+
+The owner published and hit two procedure rejections, both before any E2B call (server log):
+- "Unsupported target stack": strict four-field adapter matching rejected the project. Matching now uses framework and language only (see decisions.md), and the error now says what is supported.
+- "Your session expired": the preview treated this as final. It now waits for the workspace to reconnect with the renewed sign-in token and retries automatically. Other failures are still shown and not retried. The precise live token timing remains unobserved.
+
+Validation: typecheck and backend build passed. Focused tests passed (9): the new matching cases (React 19/TS 5 with extra libraries, framework-only "React + TypeScript", Blazor WebAssembly with extra libraries, React Native and JavaScript rejected) and two browser tests mounting the real StackPreview with a scripted connection. The second test confirms there is no retry on the stale connection, a retry on the renewed one, and no automatic retry for ordinary errors. The harness tests use a 180 s timeout because the first Vite compile on Windows exceeded 45 s. The full regression was not rerun after this follow-up. The local backend must be republished for the matching change to apply.
+
+Follow-up (same day): after republishing, the owner's project was still rejected. Cause: older projects store their stack only in `outputStack`, with blank framework/language fields. The project view and chat apply `presetDetails` as a fallback, so the browser saw a supported stack. The preview procedure read the raw blank fields. The procedure now applies the same fallback, and an unsupported-stack error reports the framework and language it read. Backend build and module typecheck passed. There is no automated test for a legacy project in the preview procedure yet. Requires republishing.
+
+## Preview without a hand-written entry - November 8, 2026
+
+Owner request: render the component's own saved file instead of requiring `examples/Preview.tsx` / `Examples/Preview.razor`. If the draft has no such entry, the procedure now generates a host entry for the build only; it is never saved to the draft. A hand-written entry is still preferred when present.
+- **React:** the entry uses `import.meta.glob` over the draft's `.tsx` files, ranks the file named after the component (then Common), and picks the export matching the component name, else the default export, else the first capitalized component export. It renders that export with no props inside an error boundary.
+- **Blazor:** the entry reflects over the compiled assembly for the component type by name (then Common, then any), excluding host types. It renders that type with `DynamicComponent` inside an `ErrorBoundary`.
+
+Validation: typecheck and backend build passed. Unit cases cover a hand-written entry passing through, the generated React/Blazor entry, name sanitizing, and the missing-file error. The live E2B check passed for both stacks, with component-only drafts building, rendering and clicking (React 17 s, Blazor 49 s). Limits: components that need props render with none, and a thrown error is shown inside the preview. Requires republishing.
+
+Follow-up: a live dropdown crashed with "Cannot read properties of undefined (reading 'filter')". The generated entry rendered the bare component without props and ignored the draft's own nested `Common/dropdown/examples/Preview.tsx`, because only a top-level examples folder was considered. Example/demo/preview files at any depth now outrank the bare component in both the React glob ranking and the Blazor reflection order. Error text names the file and suggests adding an example when props are missing, and the literal `\n` is fixed. A nested Blazor `Preview.razor` that already declares `ComPlixPreview.Library.Examples` is used directly, avoiding a duplicate-type clash. Live E2B check passed for both stacks with a prop-requiring component plus a nested example (React 20 s, Blazor 47 s); backend build and the unit tests passed. Requires republishing.
+
+## Local database reset - November 8, 2026
+
+Owner requested clearing the local database and all projects before starting the project-initiation phase. Deleted `complix-local` on the local standalone server and republished the current working-tree module with `npm.cmd run backend:publish`; the CLI reported a newly created database. All projects, components, drafts, chats, references, guidance, organizations, memberships and invitations are gone; user profiles re-register on next sign-in. This also deployed the pending sandbox-preview module changes listed above. A best-effort copy of the previous data directory is at `.local/data-backup-2026-11-08` (live lock files could not be copied, so restore is not guaranteed). Row counts could not be confirmed by CLI SQL because the tables are private (403). Browsers need a reload and fresh sign-in.
+
+
+## Shared frontend component extraction - November 8, 2026
+
+On `refactor/shared-frontend-components`, extracted Button, Badge and ChatMessage into `src/components`, moved the existing Modal and ProjectCard there, and updated frontend callers. Native DOM elements, CSS classes, form submit defaults, refs and feature handlers are preserved; raw HTML preview fixtures remain native HTML. Added component usage notes in `src/components/README.md` and recorded the scope in decisions.md. Existing unrelated working-tree changes were preserved; no commit, publication or provider call.
+
+Validation: four focused foundation browser tests passed (project creation/switching, workspace ownership/navigation, project chat, component explorer and transcript clearing), exit 0, isolated frontend 53173/backend 53100/database complix-shared-components. Vite production bundling passed with the existing >500 kB chunk warning. `npm.cmd run build` and a separate frontend typecheck are blocked by the unrelated in-progress `src/pdfText.ts:11` error: `isEvalSupported` is absent from `DocumentInitParameters`; that file was not changed for this extraction. `git diff --check` passed. Full regression was not run.
+
+
+## Implementable editor-comment agent plan - November 8, 2026
+
+Revised realtime-agent-implementation-proposal-v2.md at owner request: comment-origin requests, durable deduplication, separate complete candidates, revision/local-edit protection, logical Stop checks and phased verification gates. Removed abortable SSE/instant teardown assumptions; automatic triggering and marker UX remain open. Reviewed current coordinator/cancellation/context checks. Documentation only; no application tests, build, publication or provider calls performed.
+
+## Automatic editor-comment instructions - November 8, 2026
+
+Implemented the first working increment on `feat/editor-comment-instructions` after the owner selected automatic triggering. New user-saved JSX/Razor markup `@complix` comments run after successful autosave and two idle seconds in the open Code panel. Added shared detection, the EditorInstructions UI, private persisted instruction identity and scoped view, enable/dismiss reducers and a procedure that verifies the saved comment/revision before reusing Gemini/Nemotron. Accepted requests deduplicate across tabs/reloads; generated/inherited markers stay inert through unrelated saves; ambiguous duplicates and moved processed comments do not automatically run. Failed admission persists as blocked and needs explicit enable/retry. Source edits, job cancellation, deadlines and access are checked before every provider call and final acceptance. Results remain separate unverified candidates; newer local/saved edits and the working preview are preserved.
+
+Added @babel/parser 8.1.0 for actual TSX comment parsing (official Babel parser documentation consulted); Razor intentionally supports markup before executable Razor transitions, not arbitrary C# syntax. Reused existing TypeScript module/schema/procedure APIs and official SpacetimeDB procedure guidance. Regenerated bindings and extended workspace subscriptions. Usage: docs/editor-instructions.md. Updated the proposal and decisions to record the owner's automatic-trigger choice; timing/syntax/comment-retention are implementation defaults.
+
+Validation actually run: final frontend/module strict typechecks, Vite production build and backend compilation passed; Vite retains a >500 kB warning (the parser increases the frontend bundle). Three detection tests passed. Final focused integration/browser run: 12 passed, exit 0, frontend 53573/backend 53500/database complix-comment-focused. Coverage includes both React/Blazor automatic execution and reload deduplication, idempotent concurrent claim, access isolation, shared rate limits after transcript clear, stale edits, cancellation with no late acceptance/final Gemini call, oversized-context rejection without job creation, removed markers and inert provider-generated markers. Existing draft/chat/component regressions in that focused run also passed. Initial focused assertions were corrected for string-valued procedure rejections; initial React browser run reached reload successfully but exceeded the 45 s Windows compile budget, so the new browser tests use 120 s.
+
+Full regression attempted on frontend 53473/backend 53400/database complix-comment-regression: 45 passed, 4 skipped, 39 did not run and 1 failed. The serial foundation group stopped at the existing setup helper's `Theme` selectOption locator, which does not match the current questionnaire choice UI. That separate in-progress setup flow was left unchanged. The complete suite is not green. git diff --check passed. No real provider/E2B calls, operator credential reads, local application publication, commit or push. A data-preserving backend publication and browser reload are needed before using the new API in the running app; paid real-model acceptance and broader Razor syntax remain unverified/future.

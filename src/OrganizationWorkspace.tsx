@@ -1,9 +1,11 @@
+import { Badge } from './components/Badge';
+import { Button } from './components/Button';
 import { ProjectLibrary } from './ProjectLibrary';
 import { ProjectReferences } from './ProjectReferences';
-import { ProjectCard, projectStack } from './ProjectCard';
+import { ProjectCard, projectStack } from './components/ProjectCard';
 import { ProjectDetails, emptyTechnology, technologyLabels, type Technology } from './ProjectDetails';
 import { ProjectGuidance } from './ProjectGuidance';
-import { Modal } from './Modal';
+import { Modal } from './components/Modal';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { DbConnection, tables } from './module_bindings';
 import { useWorkspace, endpoint, database } from './useWorkspace';
@@ -200,8 +202,8 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
   return <>
     <header className="app-header">
       <div className="header-project-context">
-        <button type="button" className="brand brand-link" onClick={() => navigate('projects')}>ComPlix.</button>
-        {project && <button type="button" className="secondary back-to-projects" onClick={() => navigate('projects')}>All projects</button>}
+        <Button type="button" className="brand brand-link" onClick={() => navigate('projects')}>ComPlix.</Button>
+        {project && <Button type="button" className="secondary back-to-projects" onClick={() => navigate('projects')}>All projects</Button>}
         {(project || route.page === 'invitations') && data.projects.length > 0 && <label className="project-switcher">Project<select aria-label="Active project" value={projectContext?.id.toString() ?? ''} onChange={e => {
           if (!e.target.value) return;
           if (!project) {
@@ -213,27 +215,27 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
       </div>
       {project
         ? <nav className="project-page-nav" aria-label="Project pages">
-          <button type="button" aria-current={route.page === 'library' ? 'page' : undefined} onClick={() => navigate('library')}>Components</button>
-          <button type="button" aria-current={route.page === 'guidance' ? 'page' : undefined} onClick={() => navigate('guidance')}>Design guidance</button>
-          <button type="button" aria-current={['settings', 'references', 'sharing'].includes(route.page) ? 'page' : undefined} onClick={() => navigate('settings')}>Settings</button>
+          <Button type="button" aria-current={route.page === 'library' ? 'page' : undefined} onClick={() => navigate('library')}>Components</Button>
+          <Button type="button" aria-current={route.page === 'guidance' ? 'page' : undefined} onClick={() => navigate('guidance')}>Design guidance</Button>
+          <Button type="button" aria-current={['settings', 'references', 'sharing'].includes(route.page) ? 'page' : undefined} onClick={() => navigate('settings')}>Settings</Button>
         </nav>
         : route.organizationId && org
           ? <nav className="project-page-nav organization-page-nav" aria-label="Organization pages">
-            <button type="button" className="secondary" onClick={() => navigate('organization')}>All organizations</button>
-            <button type="button" aria-current={route.page === 'organizationOverview' ? 'page' : undefined} onClick={() => navigate('organizationOverview')}>Overview</button>
-            <button type="button" aria-current={route.page === 'organizationProjects' ? 'page' : undefined} onClick={() => navigate('organizationProjects')}>Projects</button>
-            <button type="button" aria-current={route.page === 'organizationMembers' ? 'page' : undefined} onClick={() => navigate('organizationMembers')}>Members &amp; invitations</button>
-            <button type="button" aria-current={route.page === 'organizationSettings' ? 'page' : undefined} onClick={() => navigate('organizationSettings')}>Settings</button>
+            <Button type="button" variant="secondary" onClick={() => navigate('organization')}>All organizations</Button>
+            <Button type="button" aria-current={route.page === 'organizationOverview' ? 'page' : undefined} onClick={() => navigate('organizationOverview')}>Overview</Button>
+            <Button type="button" aria-current={route.page === 'organizationProjects' ? 'page' : undefined} onClick={() => navigate('organizationProjects')}>Projects</Button>
+            <Button type="button" aria-current={route.page === 'organizationMembers' ? 'page' : undefined} onClick={() => navigate('organizationMembers')}>Members &amp; invitations</Button>
+            <Button type="button" aria-current={route.page === 'organizationSettings' ? 'page' : undefined} onClick={() => navigate('organizationSettings')}>Settings</Button>
           </nav>
           : <nav className="top-navigation" aria-label="Workspace pages">
-          <button type="button" aria-current={route.page === 'projects' ? 'page' : undefined} onClick={() => navigate('projects')}>Projects</button>
-          <button type="button" aria-current={route.page === 'organization' ? 'page' : undefined} onClick={() => navigate('organization')}>Organizations</button>
-          <button type="button" aria-current={route.page === 'invitations' ? 'page' : undefined} onClick={() => navigate('invitations')}>Invitations{data.invitations.length > 0 ? ` (${data.invitations.length})` : ''}</button>
+          <Button type="button" aria-current={route.page === 'projects' ? 'page' : undefined} onClick={() => navigate('projects')}>Projects</Button>
+          <Button type="button" aria-current={route.page === 'organization' ? 'page' : undefined} onClick={() => navigate('organization')}>Organizations</Button>
+          <Button type="button" aria-current={route.page === 'invitations' ? 'page' : undefined} onClick={() => navigate('invitations')}>Invitations{data.invitations.length > 0 ? ` (${data.invitations.length})` : ''}</Button>
         </nav>}
       <div className="header-actions">
         {project && <span className="badge access-badge">{ownedProjects.some(item => item.id === project.id) ? 'Owner' : project.permission === 'editor' ? 'Editor' : 'Viewer'}</span>}
-        <button type="button" className="secondary theme-toggle" onClick={toggleTheme} aria-pressed={theme === 'dark'} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' theme'}>{theme === 'light' ? 'Dark mode' : 'Light mode'}</button>
-        <button type="button" className="secondary sign-out" onClick={() => { void (async () => { try { await draftGuard.current?.(); await signOut(); } catch { setError('Save or resolve your draft edits before signing out.'); } })(); }}>Sign out</button>
+        <Button type="button" className="secondary theme-toggle" onClick={toggleTheme} aria-pressed={theme === 'dark'} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' theme'}>{theme === 'light' ? 'Dark mode' : 'Light mode'}</Button>
+        <Button type="button" className="secondary sign-out" onClick={() => { void (async () => { try { await draftGuard.current?.(); await signOut(); } catch { setError('Save or resolve your draft edits before signing out.'); } })(); }}>Sign out</Button>
       </div>
     </header>
     <main>
@@ -242,10 +244,10 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
         : route.page === 'organization' ? 'Organizations'
           : route.page === 'invitations' ? 'Invitations' : 'Your projects'}</h1></>}
       {status === 'loading' && <p role="status">Connecting and loading your workspace…</p>}
-      {status === 'error' && <section className="panel"><p role="alert" className="error">Cannot load the workspace. Check the backend connection, configured sign-in client, and verified email, then retry.</p><button onClick={() => setAttempt(value => value + 1)}>Retry connection</button></section>}
+      {status === 'error' && <section className="panel"><p role="alert" className="error">Cannot load the workspace. Check the backend connection, configured sign-in client, and verified email, then retry.</p><Button onClick={() => setAttempt(value => value + 1)}>Retry connection</Button></section>}
       {status === 'ready' && <>
         {route.page === 'projects' && <p className="intro">Signed in as <strong>{data.profile?.name}</strong> · <span data-testid="profile-email">{data.profile?.email}</span></p>}
-        {route.organizationId && !org && <section className="panel"><p role="alert">This organization is unavailable or you no longer have access.</p><button type="button" onClick={() => navigate('organization')}>Back to organizations</button></section>}
+        {route.organizationId && !org && <section className="panel"><p role="alert">This organization is unavailable or you no longer have access.</p><Button type="button" onClick={() => navigate('organization')}>Back to organizations</Button></section>}
         {project && route.page !== 'library' && <><div className="project-page-heading"><div className="eyebrow">Project workspace</div><h1>{project.name}</h1></div>
           <p className="project-stack-summary">{projectStack(project)}</p></>}
         {route.page === 'projects' && <>
@@ -258,19 +260,19 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
         {notice && <p role="status" className="status">{notice}</p>}
         {route.projectId && !project && status === 'ready' && <section className="panel">
           <p role="alert">This project is unavailable or you no longer have access.</p>
-          <button type="button" onClick={() => navigate('projects')}>Back to projects</button>
+          <Button type="button" onClick={() => navigate('projects')}>Back to projects</Button>
         </section>}
         <fieldset disabled={pending} className="workspace-controls">
           {route.page === 'projects' && <section className="route-page" aria-label="Projects">
           <div className="project-actions-row">
             <div className="project-list-switch" role="group" aria-label="Project list">
-              <button type="button" className={projectList === 'owned' ? '' : 'secondary'} aria-pressed={projectList === 'owned'} onClick={() => setProjectList('owned')}>My projects</button>
-              <button type="button" className={projectList === 'shared' ? '' : 'secondary'} aria-pressed={projectList === 'shared'} onClick={() => setProjectList('shared')}>Shared projects</button>
+              <Button type="button" className={projectList === 'owned' ? '' : 'secondary'} aria-pressed={projectList === 'owned'} onClick={() => setProjectList('owned')}>My projects</Button>
+              <Button type="button" className={projectList === 'shared' ? '' : 'secondary'} aria-pressed={projectList === 'shared'} onClick={() => setProjectList('shared')}>Shared projects</Button>
             </div>
             {projectList === 'shared' && <label className="shared-project-filter">Organization<select aria-label="Filter shared projects by organization" value={sharedOrganization} onChange={e => setSharedOrganization(e.target.value)}>
                 <option value="">All organizations</option>{data.organizations.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}
             </select></label>}
-            <button type="button" className="create-project-shortcut" onClick={() => { setError(''); setActiveModal('project'); }}>+ Create project</button>
+            <Button type="button" className="create-project-shortcut" onClick={() => { setError(''); setActiveModal('project'); }}>+ Create project</Button>
           </div>
           {projectList === 'owned'
             ? ownedProjects.length ? cards(ownedProjects) : <p className="empty-projects">You don't own any projects yet. Use Create project to start your first library.</p>
@@ -282,8 +284,8 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
             saved={data.guidance.find(row => row.projectId === project.id)} connection={connection} />}
           </section>}
           {route.page === 'library' && <section className="route-page" aria-label="Components">
-          {project && connection && <ProjectLibrary key={'library:' + project.id.toString()} projectId={project.id} target={project} previewToken={token} draftGuard={draftGuard} editable={project.permission === 'editor'}
-            components={data.components.filter(row => row.projectId === project.id)} messages={data.messages.filter(row => row.projectId === project.id)} drafts={data.drafts.filter(row => row.projectId === project.id)} jobs={data.jobs.filter(row => row.projectId === project.id)} references={data.references.filter(row => row.projectId === project.id)} mode={data.generationMode} chatEnabled={data.chatEnabled} connection={connection} />}
+          {project && connection && <ProjectLibrary key={'library:' + project.id.toString()} projectId={project.id} target={project} instructions={data.instructions.filter(row => row.projectId === project.id)} draftGuard={draftGuard} editable={project.permission === 'editor'}
+            components={data.components.filter(row => row.projectId === project.id)} messages={data.messages.filter(row => row.projectId === project.id)} drafts={data.drafts.filter(row => row.projectId === project.id)} previews={data.previews.filter(row => row.projectId === project.id)} jobs={data.jobs.filter(row => row.projectId === project.id)} references={data.references.filter(row => row.projectId === project.id)} mode={data.generationMode} chatEnabled={data.chatEnabled} connection={connection} />}
           </section>}
           {route.page === 'references' && <section className="route-page" aria-label="References">
           {project && connection && <ProjectReferences key={'references:' + project.id.toString()} editable={project.permission === 'editor'}
@@ -294,16 +296,16 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
           {route.page === 'sharing' && <section className="route-page" aria-label="Project sharing">
           {project && <section className="panel"><h2>Project sharing</h2><p className="note">{project.organizationId ? 'Manage the organization and people who can access this library.' : 'This library is private. Choose an organization to share it with selected members.'}</p>            {project.canManage && project.ownership === 'personal' && <form onSubmit={e => form(e, () => api().setProjectOrganization({ projectId: project.id, organizationId: BigInt(association) }))}>
               <label>Project sharing organization<select aria-label="Project sharing organization" value={association} onChange={e => setAssociation(e.target.value)}><option value="0">Private — no organization</option>{data.organizations.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}</select></label>
-              <p className="note">Changing or removing the organization removes all existing project grants and pending invitation grants. It does not transfer ownership.</p><button>Update sharing organization</button>
+              <p className="note">Changing or removing the organization removes all existing project grants and pending invitation grants. It does not transfer ownership.</p><Button>Update sharing organization</Button>
             </form>}</section>}
           {project?.canManage && <section className="panel"><div className="panel-heading"><h2>Share this project</h2>
-            <button type="button" className="secondary" onClick={() => {
+            <Button type="button" variant="secondary" onClick={() => {
               setError(''); setProjectInviteMode('project'); setInviteAccess('viewer'); setInviteRole('member'); setActiveModal('projectInvitation');
-            }}>Invite to project</button>
+            }}>Invite to project</Button>
           </div>
             <p>Project access is granted explicitly. A project-only invitation does not add organization membership. Removing a member from an organization removes their grants to that organization’s projects.</p>
             <ul className="member-list">{projectAccessMembers.map(member => <li key={member.key}>
-              <strong>{member.name}</strong>{member.role && <span className="badge">{member.role}</span>}{member.email && <span> · {member.email}</span>}
+              <strong>{member.name}</strong>{member.role && <Badge>{member.role}</Badge>}{member.email && <span> · {member.email}</span>}
               <label>Project access for {member.name}<select aria-label={'Project access for ' + member.name}
                 value={member.projectRole}
                 onChange={e => void run(() => api().setProjectAccess({ projectId: project.id, member: member.user, role: e.target.value }))}>
@@ -316,18 +318,18 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
           {route.page === 'organization' && <section className="route-page" aria-label="Organizations">
             <section className="panel">
               <div className="panel-heading"><h2>Your organization spaces</h2>
-                <button type="button" className="secondary" onClick={() => { setError(''); setActiveModal('organization'); }}>+ Create organization</button>
+                <Button type="button" variant="secondary" onClick={() => { setError(''); setActiveModal('organization'); }}>+ Create organization</Button>
               </div>
               <p className="note">You can belong to no organizations, one, or many. Each is a shared space for members to collaborate on multiple projects. Joining does not give everyone access to every project.</p>
               <div className="space-grid">{data.organizations.map(space => {
                 const spaceProjects = data.projects.filter(item => item.organizationId === space.id);
                 return <article className="space-card" key={space.id.toString()} aria-label={'Organization space ' + space.name}>
-                  <div className="card-badges"><span className="badge">Organization space</span><span className="badge">Your role: {space.role}</span></div><h3>{space.name}</h3>
+                  <div className="card-badges"><Badge>Organization space</Badge><Badge>Your role: {space.role}</Badge></div><h3>{space.name}</h3>
                   <p className="note">{spaceProjects.length} {spaceProjects.length === 1 ? 'project' : 'projects'} you can access in this space</p>
                   {spaceProjects.length ? <ul className="space-projects">{spaceProjects.map(item => <li key={item.id.toString()}>
-                    <button type="button" className="space-project-link" onClick={() => openProject(item.id)}>{item.name}</button><span>{projectStack(item)}</span>
+                    <Button type="button" className="space-project-link" onClick={() => openProject(item.id)}>{item.name}</Button><span>{projectStack(item)}</span>
                   </li>)}</ul> : <p className="note">No projects shared with you here yet. Private and ungranted projects are not listed.</p>}
-                  <button type="button" className="secondary" onClick={() => navigate('organizationOverview', undefined, space.id.toString())}>Manage {space.name}</button>
+                  <Button type="button" variant="secondary" onClick={() => navigate('organizationOverview', undefined, space.id.toString())}>Manage {space.name}</Button>
                 </article>;
               })}</div>
               {!data.organizations.length && <p>No organizations yet. Your private projects work without one. Create a shared space or accept an invitation.</p>}
@@ -336,18 +338,18 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
 
           {route.page === 'organizationOverview' && org && <section className="route-page" aria-label="Organization overview">
             <section className="panel">
-              <div className="card-badges"><span className="badge">Organization space</span><span className="badge">Your role: {org.role}</span></div>
+              <div className="card-badges"><Badge>Organization space</Badge><Badge>Your role: {org.role}</Badge></div>
               <p>You can access {data.projects.filter(item => item.organizationId === org.id).length} projects in this shared space.</p>
               <p className="note">Organization membership does not automatically grant access to every project.</p>
               <div className="project-actions-row">
-                <button type="button" onClick={() => navigate('organizationProjects')}>View projects</button>
-                <button type="button" className="secondary" onClick={() => navigate('organizationMembers')}>Manage members</button>
-                {manager && <button type="button" className="secondary" onClick={() => navigate('organizationSettings')}>Organization settings</button>}
+                <Button type="button" onClick={() => navigate('organizationProjects')}>View projects</Button>
+                <Button type="button" variant="secondary" onClick={() => navigate('organizationMembers')}>Manage members</Button>
+                {manager && <Button type="button" variant="secondary" onClick={() => navigate('organizationSettings')}>Organization settings</Button>}
               </div>
               {data.projects.some(item => item.organizationId === org.id) && <ul className="space-projects">{data.projects.filter(item => item.organizationId === org.id).map(item =>
-                <li key={item.id.toString()}><button type="button" className="space-project-link" onClick={() => openProject(item.id)}>{item.name}</button><span>{projectStack(item)}</span></li>)}</ul>}
+                <li key={item.id.toString()}><Button type="button" className="space-project-link" onClick={() => openProject(item.id)}>{item.name}</Button><span>{projectStack(item)}</span></li>)}</ul>}
             </section>
-            {org.role !== 'owner' && <button type="button" className="secondary" onClick={() => void run(() => api().leaveOrganization({ organizationId: org.id }))}>Leave {org.name}</button>}
+            {org.role !== 'owner' && <Button type="button" variant="secondary" onClick={() => void run(() => api().leaveOrganization({ organizationId: org.id }))}>Leave {org.name}</Button>}
           </section>}
 
           {route.page === 'organizationProjects' && org && <section className="route-page" aria-label="Organization projects">
@@ -363,16 +365,16 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
           {route.page === 'organizationMembers' && org && <section className="route-page" aria-label="Organization members and invitations">
             <section className="panel">
               <div className="panel-heading"><h2>Members of {org.name}</h2>
-                {manager && <button type="button" className="secondary" onClick={() => { setError(''); setInviteRole('member'); setInviteAccess(''); setActiveModal('invitation'); }}>Invite member</button>}
+                {manager && <Button type="button" variant="secondary" onClick={() => { setError(''); setInviteRole('member'); setInviteAccess(''); setActiveModal('invitation'); }}>Invite member</Button>}
               </div>
               <p className="note">Organization roles manage membership. They do not grant access to personally owned projects.</p>
               {manager ? <ul className="member-list">{data.members.filter(member => member.organizationId === org.id).map(member => <li key={member.key}>
-                <strong>{member.name}</strong> · {member.email} <span className="badge">{member.role}</span>
+                <strong>{member.name}</strong> · {member.email} <Badge>{member.role}</Badge>
                 {member.role !== 'owner' && <>
                   {org.role === 'owner' && <label>Organization role for {member.name}<select aria-label={'Organization role for ' + member.name} value={member.role} onChange={e => void run(() => api().setMemberRole({ organizationId: org.id, member: member.user, role: e.target.value }))}>
                     <option value="member">Member</option><option value="admin">Admin</option>
                   </select></label>}
-                  {(org.role === 'owner' || member.role === 'member') && <button type="button" className="secondary" onClick={() => void run(() => api().removeMember({ organizationId: org.id, member: member.user }))}>Remove {member.name}</button>}
+                  {(org.role === 'owner' || member.role === 'member') && <Button type="button" variant="secondary" onClick={() => void run(() => api().removeMember({ organizationId: org.id, member: member.user }))}>Remove {member.name}</Button>}
                 </>}
               </li>)}</ul> : <p>Only organization owners and admins can view and manage the member roster.</p>}
             </section>
@@ -382,11 +384,11 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
               <ul className="member-list">{data.invitations.filter(invite => invite.organizationId === org.id).map(invite => <li key={invite.id.toString()}>
                 <strong>{invite.email}</strong> · {invite.role || 'member'}{invite.projectRole ? ` · ${invite.projectRole} access to ${invite.projectName}` : ''}
                 <p className="note">Expires {new Date(Number(invite.expiresAt.microsSinceUnixEpoch / 1000n)).toLocaleString()}</p>
-                {manager && <button type="button" className="secondary" onClick={() => void run(() => api().revokeInvitation({ invitationId: invite.id }))}>Revoke invitation for {invite.email}</button>}
+                {manager && <Button type="button" variant="secondary" onClick={() => void run(() => api().revokeInvitation({ invitationId: invite.id }))}>Revoke invitation for {invite.email}</Button>}
               </li>)}</ul>
               {!data.invitations.some(invite => invite.organizationId === org.id) && <p>No pending invitations.</p>}
             </section>
-            {org.role !== 'owner' && <button type="button" className="secondary" onClick={() => void run(() => api().leaveOrganization({ organizationId: org.id }))}>Leave {org.name}</button>}
+            {org.role !== 'owner' && <Button type="button" variant="secondary" onClick={() => void run(() => api().leaveOrganization({ organizationId: org.id }))}>Leave {org.name}</Button>}
           </section>}
 
           {route.page === 'organizationSettings' && org && <section className="route-page" aria-label="Organization settings">
@@ -396,7 +398,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
               {manager
                 ? <form onSubmit={e => form(e, () => api().renameOrganization({ organizationId: org.id, name: renameOrgName }))}>
                     <label>Organization name<input aria-label="Organization name" required maxLength={80} value={renameOrgName} onChange={e => setRenameOrgName(e.target.value)} /></label>
-                    <button>Save organization name</button>
+                    <Button>Save organization name</Button>
                   </form>
                 : <p>Only organization owners and admins can change organization settings.</p>}
             </section>
@@ -408,12 +410,12 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
               {invite.organizationId && <> · {invite.role || 'member'}</>}
               {invite.projectRole && <> · {invite.projectRole} access to {invite.projectName}</>}
               <p className="note">Expires {new Date(Number(invite.expiresAt.microsSinceUnixEpoch / 1000n)).toLocaleString()}</p>
-              {invite.email === data.profile?.email && <button type="button" onClick={() => void run(() => api().acceptInvitation({ invitationId: invite.id }))}>
+              {invite.email === data.profile?.email && <Button type="button" onClick={() => void run(() => api().acceptInvitation({ invitationId: invite.id }))}>
                 {invite.organizationId ? `Accept invitation to ${invite.organizationName}` : `Accept project invitation to ${invite.projectName}`}
-              </button>}
+              </Button>}
               {(data.organizations.some(item => item.id === invite.organizationId && ['owner', 'admin'].includes(item.role)) ||
                 (!invite.organizationId && data.projects.some(item => item.id === invite.projectId && item.canManage))) &&
-                <button type="button" className="secondary" onClick={() => void run(() => api().revokeInvitation({ invitationId: invite.id }))}>Revoke invitation for {invite.email}</button>}
+                <Button type="button" variant="secondary" onClick={() => void run(() => api().revokeInvitation({ invitationId: invite.id }))}>Revoke invitation for {invite.email}</Button>}
             </li>)}</ul>
           </section>
           </section>}
@@ -423,7 +425,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
               <p>{project.organizationId ? 'Shared through ' + (data.organizations.find(item => item.id === project.organizationId)?.name ?? 'an organization') : 'Private project — no organization'}</p>
               <p className="muted">Your project access: {project.permission}{project.ownership === 'organization' ? ' · Existing organization-owned project' : ''}</p>
               {project.permission === 'editor' && <form onSubmit={e => form(e, async () => { await api().renameProject({ projectId: project.id, name: projectName }); setProjectName(''); })}>
-                <label>Project name<input aria-label="New project name" required maxLength={80} value={projectName} onChange={e => setProjectName(e.target.value)} /></label><button>Rename project</button>
+                <label>Project name<input aria-label="New project name" required maxLength={80} value={projectName} onChange={e => setProjectName(e.target.value)} /></label><Button>Rename project</Button>
               </form>}
             </section>
             <ProjectDetails key={'details:' + project.id.toString()} project={project} />
@@ -431,11 +433,11 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
               <div><strong>Saved References ({data.references.filter(row => row.projectId === project.id).length} / 20 files · 128 KiB per-file cap)</strong>
                 <p className="note">{data.references.filter(row => row.projectId === project.id).map(row => row.filename).join(', ') || 'No references saved yet.'}</p>
               </div>
-              <button type="button" className="secondary" onClick={() => navigate('references')}>Manage references</button>
+              <Button type="button" variant="secondary" onClick={() => navigate('references')}>Manage references</Button>
             </div></section>
             <section className="panel"><h2>Sharing</h2>
               <p className="note">Manage this project's organization association and member access separately from its technology settings.</p>
-              <button type="button" className="secondary" onClick={() => navigate('sharing')}>Manage sharing</button>
+              <Button type="button" variant="secondary" onClick={() => navigate('sharing')}>Manage sharing</Button>
             </section>
           </>}
           </section>}
@@ -464,9 +466,9 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
             : value === 'react-ts-tailwind-shadcn' ? { framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' } : emptyTechnology);
         }}><option value="">Custom / undecided</option>{Object.entries(profiles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {Object.entries(technologyLabels).map(([field, label]) => <label key={field}>{label}<input aria-label={'Requested ' + label} maxLength={1000} value={newTechnology[field as keyof Technology]} onChange={e => setNewTechnology(old => ({ ...old, [field]: e.target.value }))} /></label>)}
-        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setActiveModal(null)}>Cancel</button><button disabled={pending}>Create project</button></div>
+        <div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setActiveModal(null)}>Cancel</Button><Button disabled={pending}>Create project</Button></div>
       </form>
-      {localStorage.getItem('complix.local.identity.v1') && <button className="secondary" disabled={pending} onClick={() => void run(importLegacy)}>Import previous local project as private</button>}
+      {localStorage.getItem('complix.local.identity.v1') && <Button variant="secondary" disabled={pending} onClick={() => void run(importLegacy)}>Import previous local project as private</Button>}
     </Modal>
     {project?.canManage && <Modal open={activeModal === 'projectInvitation'} title={'Invite someone to ' + project.name} onClose={() => setActiveModal(null)}>
       {error && <p role="alert" className="error">{error}</p>}
@@ -494,14 +496,14 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
           <option value="viewer">Viewer</option><option value="editor">Editor</option>
         </select></label>}
         <p className="note">Invitations expire after seven days. Project-only access does not add organization membership. No email is sent; share the app address with the recipient.</p>
-        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setActiveModal(null)}>Cancel</button><button disabled={pending}>Create invitation</button></div>
+        <div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setActiveModal(null)}>Cancel</Button><Button disabled={pending}>Create invitation</Button></div>
       </form>
     </Modal>}
     <Modal open={activeModal === 'organization'} title="Create organization" onClose={() => setActiveModal(null)}>
       {error && <p role="alert" className="error">{error}</p>}
       <form onSubmit={e => form(e, async () => { await api().createOrganization({ name: orgName }); setOrgName(''); }, () => setActiveModal(null))}>
         <label htmlFor="organization-name">Organization name<input id="organization-name" required maxLength={80} value={orgName} onChange={e => setOrgName(e.target.value)} /></label>
-        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setActiveModal(null)}>Cancel</button><button disabled={pending}>Create organization</button></div>
+        <div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setActiveModal(null)}>Cancel</Button><Button disabled={pending}>Create organization</Button></div>
       </form>
     </Modal>
     {org && manager && <Modal open={activeModal === 'invitation'} title={'Invite a member to ' + org.name} onClose={() => setActiveModal(null)}>
@@ -514,7 +516,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
         <label htmlFor="invite-role">Organization role<select id="invite-role" value={inviteRole} onChange={e => setInviteRole(e.target.value)}><option value="member">Member</option>{org.role === 'owner' && <option value="admin">Admin</option>}</select></label>
         <label htmlFor="invite-access">Initial project access<select id="invite-access" value={inviteAccess} onChange={e => setInviteAccess(e.target.value)}><option value="">No access</option>{projectContext?.canManage && projectContext.organizationId === org.id && <><option value="viewer">Viewer</option><option value="editor">Editor</option></>}</select></label>
         <p className="note">The invitation expires after seven days. No email is sent; share the app address with the recipient.</p>
-        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setActiveModal(null)}>Cancel</button><button disabled={pending}>Create invitation</button></div>
+        <div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setActiveModal(null)}>Cancel</Button><Button disabled={pending}>Create invitation</Button></div>
       </form>
     </Modal>}
   </>;

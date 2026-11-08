@@ -45,11 +45,51 @@ export const ComponentDraft = __t.object("ComponentDraft", {
 });
 export type ComponentDraft = __Infer<typeof ComponentDraft>;
 
+export const ComponentPreview = __t.object("ComponentPreview", {
+  jobId: __t.u64(),
+  projectId: __t.u64(),
+  componentId: __t.u64(),
+  sandboxId: __t.string(),
+  host: __t.string(),
+  writeKey: __t.string(),
+  capability: __t.string(),
+  revision: __t.u64(),
+  expiresAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type ComponentPreview = __Infer<typeof ComponentPreview>;
+
+export const ComponentPreviewSummary = __t.object("ComponentPreviewSummary", {
+  jobId: __t.u64(),
+  projectId: __t.u64(),
+  url: __t.string(),
+  revision: __t.u64(),
+  expiresAt: __t.timestamp(),
+});
+export type ComponentPreviewSummary = __Infer<typeof ComponentPreviewSummary>;
+
 export const DraftFile = __t.object("DraftFile", {
   path: __t.string(),
   content: __t.string(),
 });
 export type DraftFile = __Infer<typeof DraftFile>;
+
+export const EditorInstruction = __t.object("EditorInstruction", {
+  id: __t.u64(),
+  key: __t.string(),
+  projectId: __t.u64(),
+  componentId: __t.u64(),
+  sourceJobId: __t.u64(),
+  revision: __t.u64(),
+  path: __t.string(),
+  text: __t.string(),
+  line: __t.u32(),
+  state: __t.string(),
+  jobId: __t.u64(),
+  updatedBy: __t.identity(),
+  updatedAt: __t.timestamp(),
+});
+export type EditorInstruction = __Infer<typeof EditorInstruction>;
 
 export const GenerationConfiguration = __t.object("GenerationConfiguration", {
   mode: __t.string(),
@@ -260,8 +300,14 @@ export type VisibleComponentChat = __Infer<typeof VisibleComponentChat>;
 export const VisibleComponentDrafts = __t.object("VisibleComponentDrafts", {});
 export type VisibleComponentDrafts = __Infer<typeof VisibleComponentDrafts>;
 
+export const VisibleComponentPreviews = __t.object("VisibleComponentPreviews", {});
+export type VisibleComponentPreviews = __Infer<typeof VisibleComponentPreviews>;
+
 export const VisibleComponents = __t.object("VisibleComponents", {});
 export type VisibleComponents = __Infer<typeof VisibleComponents>;
+
+export const VisibleEditorInstructions = __t.object("VisibleEditorInstructions", {});
+export type VisibleEditorInstructions = __Infer<typeof VisibleEditorInstructions>;
 
 export const VisibleGenerationJobs = __t.object("VisibleGenerationJobs", {});
 export type VisibleGenerationJobs = __Infer<typeof VisibleGenerationJobs>;

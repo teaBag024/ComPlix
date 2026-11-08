@@ -67,16 +67,21 @@ function adapter(spec: Pick<StackAdapter, 'id' | 'label' | 'conventions' | 'gene
     },
   };
 }
-const exact = (value: string, accepted: string[]) => accepted.includes(value.trim().toLowerCase());
+// Match on framework and language only. Styling, extra libraries and version text do not block a
+// stack: the preview host supplies Tailwind/shadcn (React) or Bootstrap (Blazor), and unsupported
+// imports fail visibly at build time instead.
+const isReactTypeScript = (target: TargetStack) => /\breact\b/i.test(target.framework) && !/\bnative\b/i.test(target.framework)
+  && /\b(typescript|ts|tsx)\b/i.test(`${target.language} ${target.framework}`);
+const isBlazor = (target: TargetStack) => /\bblazor\b/i.test(target.framework) && (!target.language.trim() || /(c#|csharp|\.net|razor)/i.test(target.language));
 export const reactAdapter = adapter({
   id: 'react-tailwind-shadcn', label: 'React + TypeScript + Tailwind + shadcn/ui',
-  matches: target => exact(target.framework, ['react']) && exact(target.language, ['typescript']) && exact(target.styling, ['tailwind', 'tailwind css']) && exact(target.libraries, ['shadcn/ui']),
+  matches: isReactTypeScript,
   conventions: 'Use .tsx components, shared .ts utilities, CSS styles, package.json dependency declarations, Markdown documentation and separate .tsx examples. Keep Common reusable.',
   generationInstructions: 'Generate React TypeScript components using Tailwind and shadcn/ui. Declare imports and package dependencies explicitly. Include public API documentation and usage examples. Include examples/Preview.tsx with a default-exported interactive example requiring no props. It may import reusable Common implementations; it is a demo host entry, not a complete application. The initial preview environment provides React 19.3.1, TypeScript 7.0.2, Tailwind 4.3.5 and Radix Slot, CVA, clsx, tailwind-merge and lucide-react; other dependencies need a separately verified environment. Respect requested versions; do not claim build/runtime verification.',
 });
 export const blazorAdapter = adapter({
   id: 'blazor-bootstrap', label: 'Blazor + Bootstrap',
-  matches: target => exact(target.framework, ['blazor']) && exact(target.language, ['c#', 'csharp']) && exact(target.styling, ['bootstrap']) && !target.libraries.trim(),
+  matches: isBlazor,
   conventions: 'Use .razor components, optional .razor.cs code-behind and .razor.css styles, a Razor class-library .csproj, Markdown/API documentation and separate .razor examples. Keep Common reusable.',
   generationInstructions: 'Generate Blazor components using Bootstrap. Declare NuGet dependencies in the project file. Document parameters and EventCallbacks. Include Examples/Preview.razor with @namespace ComPlixPreview.Library.Examples as the interactive example entry, importing reusable Common components. The preview-only host is .NET 10.0 / WebAssembly with Bootstrap 5.3.8; that does not change the requested consuming application render mode. Do not substitute JSX or React or silently change a requested .NET version. Other NuGet dependencies need a separately verified environment.',
 });

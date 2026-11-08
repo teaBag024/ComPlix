@@ -1,3 +1,4 @@
+import { Button } from './components/Button';
 import { useEffect, useRef, useState } from 'react';
 import type { DbConnection } from './module_bindings';
 import { endpoint, database, type Guidance } from './useWorkspace';
@@ -72,11 +73,11 @@ export function ProjectGuidance({ projectId, identity, saved, editable, connecti
           setError(''); setDraft(old => ({ ...old, dirty: true, values: { ...old.values, [field]: event.target.value } }));
         }} />
     </label>)}</div>
-    {editable && error && !conflict && <button type="button" onClick={() => setError('')}>Retry guidance save</button>}
+    {editable && error && !conflict && <Button type="button" onClick={() => setError('')}>Retry guidance save</Button>}
     {editable && conflict && <>
       <p>Your text is preserved above. Copy anything you want to keep before loading the latest saved answers.</p>
       <details><summary>Latest saved answers</summary><pre>{Object.entries(questions).map(([key, label]) => `${label}: ${answers(saved)[key as keyof Answers] || '(undecided)'}`).join('\n\n')}</pre></details>
-      <button type="button" disabled={busy} onClick={() => { setError(''); setDraft({ values: answers(saved), revision: String(saved?.revision ?? 0n), dirty: false }); }}>Discard my draft and load latest</button>
+      <Button type="button" disabled={busy} onClick={() => { setError(''); setDraft({ values: answers(saved), revision: String(saved?.revision ?? 0n), dirty: false }); }}>Discard my draft and load latest</Button>
     </>}
     <details><summary>Design guidance document</summary><p className="note">Text preview of the current answers, including unsaved edits. No generated code is changed.</p>
       <pre data-testid="design-document">{'# Project design guidance\n\n' + Object.entries(questions).map(([key, label]) => `## ${label}\n${displayed[key as keyof Answers] || 'Undecided'}`).join('\n\n')}</pre>

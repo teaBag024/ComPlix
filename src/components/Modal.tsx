@@ -1,3 +1,4 @@
+import { Button } from './Button';
 import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from 'react';
 
 export function Modal({ open, title, onClose, children }: {
@@ -25,7 +26,7 @@ export function Modal({ open, title, onClose, children }: {
     onClose={() => { if (open) onClose(); }}
     onClick={closeFromBackdrop}>
     <div className="modal-heading"><h2 id={titleId}>{title}</h2>
-      <button type="button" className="secondary modal-close" aria-label="Close dialog" onClick={onClose}>×</button>
+      <Button type="button" className="secondary modal-close" aria-label="Close dialog" onClick={onClose}>×</Button>
     </div>
     {children}
   </dialog>;

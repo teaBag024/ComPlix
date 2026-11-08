@@ -26,7 +26,14 @@ if (action === 'publish') {
   const secretsPath = path.join(root, '.local', 'backend.env');
   if (existsSync(secretsPath)) {
     const values = parseEnv(readFileSync(secretsPath, 'utf8'));
-    for (const name of ['NVIDIA_API_KEY', 'NVIDIA_MODEL', 'GEMINI_API_KEY', 'GEMINI_MODEL']) if (values[name] && env[name] === undefined) env[name] = values[name];
+    for (const name of ['NVIDIA_API_KEY', 'NVIDIA_MODEL', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'E2B_API_KEY', 'PREVIEW_APP_ORIGIN']) if (values[name] && env[name] === undefined) env[name] = values[name];
+  }
+  // Template IDs come from the private provisioning record written by npm run preview:template.
+  const templatesPath = path.join(root, '.local', 'e2b-templates.json');
+  if (existsSync(templatesPath)) {
+    const templates = JSON.parse(readFileSync(templatesPath, 'utf8'));
+    env.E2B_REACT_TEMPLATE ??= templates['react-tailwind-shadcn']?.agentTemplateId;
+    env.E2B_BLAZOR_TEMPLATE ??= templates['blazor-bootstrap']?.agentTemplateId;
   }
   env.NVIDIA_ENABLED ??= 'true';
   env.GENERATION_MODE ??= 'mock';

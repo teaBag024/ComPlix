@@ -1,3 +1,4 @@
+import { Button } from './components/Button';
 import { sessionExpiry } from './sessionExpiry';
 import { createRoot } from 'react-dom/client';
 import { AuthProvider, useAuth } from 'react-oidc-context';
@@ -49,11 +50,11 @@ function App() {
   if ((auth.isLoading && auth.activeNavigator !== 'signinSilent') || (auth.activeNavigator && auth.activeNavigator !== 'signinSilent')) return <main><p role="status">Completing sign-in…</p></main>;
   // A renewal error must not discard a still-valid session. Expiry checks below
   // continue to stop access if fresh credentials cannot be obtained.
-  if (auth.error && (!auth.isAuthenticated || expired)) return <main><h1>Sign-in could not finish</h1><p role="alert">Please try again. If this continues, check the registered redirect address.</p><button onClick={() => void auth.clearStaleState().then(() => window.location.assign('/'))}>Return to sign in</button></main>;
+  if (auth.error && (!auth.isAuthenticated || expired)) return <main><h1>Sign-in could not finish</h1><p role="alert">Please try again. If this continues, check the registered redirect address.</p><Button onClick={() => void auth.clearStaleState().then(() => window.location.assign('/'))}>Return to sign in</Button></main>;
   if (!auth.isAuthenticated || !auth.user?.id_token || auth.user.expired || expired) return <main>
     <span className="eyebrow">ComPlix</span><h1>Your component workspace</h1>
     <p>Sign in to create an organization or open projects shared with you.</p>
-    <button onClick={() => void auth.signinRedirect().catch(() => window.location.assign('/'))}>Sign in</button>
+    <Button onClick={() => void auth.signinRedirect().catch(() => window.location.assign('/'))}>Sign in</Button>
     <p className="note">Choose Google, GitHub, or email on the sign-in page. Available methods depend on your organization’s sign-in configuration.</p>
   </main>;
   const token = auth.user.id_token;

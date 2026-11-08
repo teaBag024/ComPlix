@@ -1,3 +1,4 @@
+import { Button } from './components/Button';
 import { useState, useRef, type FormEvent } from 'react';
 import { MAX_PROJECT_REFERENCES, MAX_REFERENCE_BYTES, referenceExtensions, referencePurposes, referenceFailure, validateReferenceFile } from '../shared/referenceFiles';
 
@@ -37,7 +38,7 @@ export function ProjectReferences({ editable, references, upload, remove }: {
     {editable ? <form onSubmit={event => void submit(event)}><fieldset disabled={busy}>
       <label>Reference purpose<select aria-label="Reference purpose" value={purpose} onChange={event => setPurpose(event.target.value)}>{Object.entries(referencePurposes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>Reference file<input ref={input} aria-label="Reference file" type="file" accept={referenceExtensions.map(ext => '.' + ext).join(',')} onChange={event => { setFile(event.target.files?.[0]); setError(''); setNotice(''); }} /></label>
-      <button disabled={!file || references.length >= MAX_PROJECT_REFERENCES}>Upload reference</button>
+      <Button disabled={!file || references.length >= MAX_PROJECT_REFERENCES}>Upload reference</Button>
       {references.length >= MAX_PROJECT_REFERENCES && <p>Reference limit reached. Remove a reference before uploading another.</p>}
     </fieldset></form> : <p className="note">Read-only access. Project editors can upload and remove references.</p>}
     {phase && <p role="status">{phase}</p>}{notice && <p role="status">{notice}</p>}{error && <p role="alert">{error}</p>}
@@ -45,12 +46,12 @@ export function ProjectReferences({ editable, references, upload, remove }: {
     {!references.length && <p>No references yet. Existing guidance is saved separately in Design guidance.</p>}
     <ul className="reference-list">{references.map(row => <li key={row.id.toString()}>
       <div><strong>{row.filename}</strong><p className="note">{referencePurposes[row.purpose as keyof typeof referencePurposes] ?? row.purpose} · {row.byteLength} bytes · Ready (UTF-8 text)</p></div>
-      <button type="button" className="secondary" onClick={() => setSelected(row.id.toString())}>Preview {row.filename}</button>
-      {editable && <button type="button" className="secondary" disabled={busy} onClick={() => setRemoving(row.id.toString())}>Remove {row.filename}</button>}
-      {editable && removing === row.id.toString() && <div><p>Remove this reference and its stored original? This cannot be undone.</p><button disabled={busy} onClick={() => {
+      <Button type="button" variant="secondary" onClick={() => setSelected(row.id.toString())}>Preview {row.filename}</Button>
+      {editable && <Button type="button" variant="secondary" disabled={busy} onClick={() => setRemoving(row.id.toString())}>Remove {row.filename}</Button>}
+      {editable && removing === row.id.toString() && <div><p>Remove this reference and its stored original? This cannot be undone.</p><Button disabled={busy} onClick={() => {
         setBusy(true); setError(''); setNotice('');
         void remove(row.id).then(() => { setRemoving(''); setNotice('Reference removed.'); }).catch(cause => setError(referenceFailure(cause))).finally(() => setBusy(false));
-      }}>Confirm removal of {row.filename}</button><button className="secondary" disabled={busy} onClick={() => setRemoving('')}>Keep reference</button></div>}
+      }}>Confirm removal of {row.filename}</Button><Button variant="secondary" disabled={busy} onClick={() => setRemoving('')}>Keep reference</Button></div>}
     </li>)}</ul>
     {preview && <section aria-label="Reference content preview"><h3>{preview.filename}</h3><p className="note">Plain-text content available as project context. Markdown and HTML are displayed as text.</p><pre data-testid="reference-content">{preview.content}</pre></section>}
   </section>;

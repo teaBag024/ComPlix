@@ -355,7 +355,7 @@ Bounded prototype implementation: at most two Gemini calls and one Nemotron call
 
 Confirmed: owner authorized building React and Blazor E2B templates and short live sandbox verification, including credit consumption. The owner requires one stack-independent component display. Both adapters therefore use the shared Code/Docs/Preview workspace and a separate-origin iframe; the adapter chooses the internal toolchain. Standalone Blazor WebAssembly is the initial internal preview host, without constraining a consuming application's render mode.
 
-Implemented prototype direction: an operator-controlled loopback Node preview service reads authorized saved SpacetimeDB drafts, builds in disposable offline E2B instances and serves bounded static artifacts. Builds require an explicit user action; a failed replacement preserves the previous preview. Dependency support is pinned and explicit. This establishes local preview execution, not authoritative validation/promotion or hosted production routing. Setup and limits: [preview-runtime.md](./preview-runtime.md).
+Superseded by "Sandbox-hosted previews" below. Original direction: an operator-controlled loopback Node preview service reads authorized saved SpacetimeDB drafts, builds in disposable offline E2B instances and serves bounded static artifacts. Builds require an explicit user action; a failed replacement preserves the previous preview. Dependency support is pinned and explicit. This establishes local preview execution, not authoritative validation/promotion or hosted production routing. Setup and limits: [preview-runtime.md](./preview-runtime.md).
 
 
 ## Component-scoped conversations - November 8, 2026
@@ -404,3 +404,35 @@ Official references: [Gemini function calling](https://ai.google.dev/gemini-api/
 ## Chat history is not a lifetime request quota - November 8, 2026
 
 Correction following the owner-reported history-limit block: the 20-record cap applies only to retained developer mock jobs. Saved real chat, successful/failed provider jobs and starter drafts do not impose a lifetime chat limit and do not consume mock-history slots. All existing rows/checkpoints/transcripts remain intact; no automatic pruning or rate-counter reset is introduced. Five requests per identity per minute, one active job/project, bounded provider calls and the 64 KiB context limit remain enforced. Long-term retention, pagination and storage budgets remain future/open; this local prototype does not claim bounded total historical storage.
+
+
+## Sandbox-hosted previews; no extra server - November 8, 2026
+
+Owner constraint: ComPlix runs only SpacetimeDB and the frontend server. This supersedes the loopback Node preview controller and gateway, which were removed. Owner direction: draft source stays in SpacetimeDB; previews rebuild on save with a loading screen.
+
+Implemented: the SpacetimeDB procedure `build_component_preview` authorizes the editor and the exact saved revision, then pushes files to an E2B sandbox using the operator key held in module configuration. Each template bakes in a small preview agent that is claimed once, builds in the background and serves the latest successful output on the sandbox's own origin under a random capability path. The private `component_preview` table holds write keys and sandbox IDs; the view exposes only the URL, revision and expiry. Sandboxes are reused across saves, with a 10-minute idle timeout extended on each save.
+
+Defaults chosen by the agent (the owner did not answer these; revisit if needed):
+- the preview URL is a secret link without a per-request access recheck;
+- builds run offline, so only pinned template dependencies are available;
+- the idle timeout is 10 minutes.
+
+E2B detail verified live: offline sandboxes require a traffic-token header for inbound requests unless `network.allowPublicTraffic: true` is set. An iframe cannot send that header, so public inbound traffic is enabled while outbound internet stays blocked. Supporting another stack means adding a template plus an adapter entry. Hosted production routing, validation/promotion and exports remain open.
+
+## Stack matching by framework and language - November 8, 2026
+
+The owner's live preview was rejected with "Unsupported target stack". Adapter selection required exact strings for all four fields (for example `Tailwind CSS` and `shadcn/ui`). Following the owner's request that any React + TypeScript or Blazor component should render, selection now uses only framework and language: React (not React Native) with TypeScript, or Blazor with C#/.NET or a blank language. Styling, extra libraries and version text no longer block preview or generation instructions. The preview hosts still provide only their pinned dependencies (Tailwind/shadcn utilities, or Bootstrap), so other imports fail visibly at build time. The same rule drives generation-instruction selection. There is still no generic or other-framework fallback.
+
+
+## Shared frontend components - November 8, 2026
+
+Owner requested extracting common frontend UI into `src/components`. Button, Badge and ChatMessage now share repeated markup; the existing Modal and ProjectCard live alongside them. Reuse native elements, current theme classes and native button submit defaults without adding dependencies. Feature state and backend calls remain in their feature modules. These application components are distinct from generated project Common libraries.
+
+
+## Comment-driven agent proposal revision - November 8, 2026
+
+Owner clarified editor-comment instructions and requested revising realtime-agent-implementation-proposal-v2.md. The proposal now reuses buffered generation, separate candidates and logical cancellation under current architecture/budgets. Marker syntax, automatic versus explicit triggering, idle interval and completed-comment handling remain proposed/open. No implementation or new worker/repair/promotion policy was approved.
+
+## Automatic editor instructions - November 8, 2026
+
+Owner authorized implementation and explicitly chose automatic execution after typing stops. Prototype defaults: JSX `@complix` comments in TSX and Razor markup `@* @complix ... *@` comments; two idle seconds after successful autosave while Code is open; retain comments; explicit enable/rerun for inherited or previously processed markers. These syntax/timing/retention details are implementation defaults, not separate owner decisions. Persist instruction-to-job identity and admission blocks, reuse existing Gemini/Nemotron budgets/context/rate limits and preserve newer human drafts. Logical Stop rejects further calls and late results without aborting in-flight HTTP or destroying the working preview. Automatic repair and verified promotion remain future scope.
