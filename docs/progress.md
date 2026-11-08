@@ -788,3 +788,23 @@ Not done or not verified:
 - Archived references can't be renamed in the UI; conflicts are resolved by removing the intake upload.
 - Ordinary (non-ComPlix) ZIP mapping (increment 4) is not implemented, and its UI rejects them with an explicit message.
 - The full foundation suite was not run.
+
+### Increment 4: ordinary source ZIP mapping (feat/component-zip-import)
+
+- **shared/sourceImport.ts:** `planAnyImportFromZip` sends ZIPs with a manifest to the verified ComPlix path and everything else to `planSourceImport`.
+  - **Dispositions:** every file gets one. Excluded, with reasons: build, dependency and tool folders (node_modules, .git, dist, build, bin, obj, ...), possible credential files (.env*, keys, .npmrc), lockfiles, unsupported types, non-UTF-8 or binary content, and files over 256 KiB.
+  - **Wrapper folder:** a single wrapper folder is stripped, except an excluded one, so a ZIP of only node_modules/ is rejected.
+  - **Suggestions:** one component per folder, or per file stem inside collection folders (ui/, components/, lib/, ...). Common or Composition comes from folder hints only.
+  - **Detected technologies:** shown for review, never applied.
+- **`buildSourceImport`:** applies the user's mapping.
+  - It validates names (format and case-insensitive uniqueness), rejects empty components and enforces the 20-file / 256 KiB draft limits.
+  - Files are re-rooted under Common/<name> or Compositions/<name>, keeping paths relative to the component's common folder. Unassigned files are listed as skipped.
+  - It reports imports from another component (relative path breaks after re-rooting, not rewritten), imports of files not being imported, unresolved relative imports, aliases and external packages.
+- **UI:** an ordinary ZIP opens a mapping editor: rename, change category, remove or add components, assign each file or choose "Don't import", and see excluded files with reasons. Issues and project conflicts block confirmation, and confirming uses the same staged upload and atomic finalize.
+
+Checks run:
+- `npm run typecheck` and `npm run build` passed.
+- 27 unit tests passed, including 5 new source-import tests. They cover exclusions, grouping, re-rooting, cross-component and alias warnings, payload acceptance by the server decoder, invalid and duplicate names, the 20-file limit, the excluded-wrapper case and ComPlix detection.
+- Real server: both browser intake tests passed (ComPlix review and source mapping), and both backend import tests passed.
+
+Not done or verified: renaming archived references in the UI, folder upload, dependency-aware preview of imported cross-component code, and the full foundation suite.

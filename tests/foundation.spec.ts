@@ -2240,3 +2240,54 @@ test('browser intake reviews a ComPlix ZIP, blocks conflicts, imports it and ope
   expect(browserErrors, 'Import intake has no browser runtime errors').toEqual([]);
   await context.close();
 });
+
+test('browser intake maps an ordinary source ZIP: rename, exclude, remove, then import re-rooted components', async ({ browser }) => {
+  test.setTimeout(120000);
+  const token = await makeToken('source-import@example.test', 'Source Import');
+  const owner = await connect(token);
+  await owner.conn.reducers.createSetupProject({ name: 'Source import', organizationId: 0n, ...reactStack });
+  const projectId = [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Source import')!.id;
+  const { zipSync, strToU8 } = await import('fflate');
+  const zip = zipSync({
+    'repo/src/components/ui/button.tsx': strToU8('export function Button() { return <button>Source marker</button>; }\n'),
+    'repo/src/components/ui/card.tsx': strToU8('export function Card() { return <div />; }\n'),
+    'repo/src/components/LoginForm/LoginForm.tsx': strToU8('import { Button } from "../ui/button";\nexport function LoginForm() { return <Button />; }\n'),
+    'repo/src/lib/utils.ts': strToU8('export const cn = () => "";\n'),
+    'repo/node_modules/react/index.js': strToU8('module.exports = {};'),
+    'repo/.env': strToU8('SECRET=value'),
+  });
+  const context = await browser.newContext();
+  await seedBrowser(context, token);
+  const page = await context.newPage();
+  const browserErrors: string[] = [];
+  page.on('pageerror', error => browserErrors.push(error.name + ': ' + error.message));
+  await page.goto(`/projects/${projectId}/setup/references`);
+  const panel = page.getByRole('region', { name: 'Import existing components', exact: true });
+  await panel.getByLabel('Component library ZIP').setInputFiles({ name: 'repo.zip', mimeType: 'application/zip', buffer: Buffer.from(zip) });
+  await expect(panel.getByTestId('import-review')).toContainText('No ComPlix manifest in repo.zip');
+  await panel.getByText(/^Files that cannot be imported/).click();
+  await expect(panel.getByText('Possible credential file; never imported.')).toBeVisible();
+  await expect(panel.getByText(/Build output, dependency or tool folder \(node_modules\)/)).toBeVisible();
+  // The shared utility is not imported: unassign its file and remove its suggested component.
+  await panel.getByLabel('Assign src/lib/utils.ts', { exact: true }).selectOption({ label: "Don't import" });
+  await expect(panel.getByRole('alert')).toContainText('Component Utils has no files');
+  await panel.getByRole('button', { name: 'Remove Utils', exact: true }).click();
+  // Rename a suggestion; the cross-component import is reported, not rewritten.
+  const names = panel.getByLabel(/^Component \d+ name$/);
+  const cardIndex = (await names.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))).indexOf('Card');
+  await names.nth(cardIndex).fill('Panel');
+  await expect(panel.getByText(/imports src\/components\/ui\/button\.tsx from component Button; the relative path will break/)).toBeVisible();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Import 3 components', exact: true }).click();
+  await expect(panel.getByTestId('import-status')).toHaveText('Imported 3 components and 0 references. Imported code is unverified until you preview it.');
+  const rows = [...owner.conn.db.visibleComponents.iter()].filter(row => row.projectId === projectId);
+  expect(rows.map(row => row.rootPath).sort()).toEqual(['Common/Button', 'Common/Panel', 'Compositions/LoginForm']);
+  const drafts = [...owner.conn.db.visibleComponentDrafts.iter()].filter(row => row.projectId === projectId).flatMap(row => row.files.map(file => file.path)).sort();
+  expect(drafts).toEqual(['Common/Button/button.tsx', 'Common/Panel/card.tsx', 'Compositions/LoginForm/LoginForm.tsx']);
+  expect(JSON.stringify(drafts)).not.toContain('.env');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Open imported library', exact: true }).click();
+  await expect(page.getByText('Common/Panel', { exact: true })).toBeVisible();
+  expect(browserErrors, 'Source import has no browser runtime errors').toEqual([]);
+  await context.close();
+});

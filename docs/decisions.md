@@ -530,3 +530,9 @@ Owner requested implementation instructions for optional existing-component uplo
 - **Transport and commit:** staged chunk upload into a private table with one atomic finalize, because reference bytes exceed a single reducer request.
 - **Provenance:** imported source is stored as mode 'imported', behind a new isSourceDraft predicate; provider accounting stays on isChatMode.
 - **Paths:** ordinary ZIP components are re-rooted under Common/ or Compositions/, and broken cross-component imports are reported rather than rewritten.
+
+**Implementation defaults (November 8, 2026, increments 1-4; working defaults, adjustable):**
+
+- **Limits:** 1 MiB upload chunks, 96 MiB payload cap (64 MiB of content plus base64), 200 components per import, staging expires after 24 hours, one in-flight import per uploader and project.
+- **Ordinary ZIPs:** build, dependency and tool folders, credential-like files, lockfiles, binaries and unsupported types are excluded with visible reasons. Grouping and category are suggestions; the user's mapping decides. Cross-component relative imports are reported, never rewritten.
+- **Conflicts:** archived references cannot yet be renamed in the UI, so clashes are resolved by removing the intake upload.
