@@ -511,3 +511,22 @@ Owner requested a roughly ten-second highlight that fades away on newly added Co
 ## Remove the Design guidance page - November 8, 2026
 
 Owner requested removing the standalone Design guidance page. Remove its navigation, route view, unused frontend component and styles; legacy guidance URLs resolve to Components (or the existing setup gate for unfinished projects). Retain all saved guidance, questionnaire intake, backend revision/access rules, generation context and ZIP design.md export. No data deletion or backend migration is part of this UI removal. This supersedes earlier guidance-page navigation requirements.
+
+
+## Existing component import within intake: implementation plan - November 8, 2026
+
+Owner requested implementation instructions for optional existing-component uploads alongside current intake. Revised create-project-from-components-proposal.md around preserving the form, reviewed ZIP import into an existing setup project, actual source/draft provenance, references and all source consumers. Skipping default starters is the working direction. No implementation or deployment was authorized by this documentation request.
+
+**Owner decisions after review (November 8, 2026).** Existing-component ZIP import is approved in scope as the final feature. This brings ZIP import forward from the system plan's deferred list.
+
+- **Setup gate:** imported components alone satisfy setup. The user can still add questionnaire answers, documents, explicit starters and later components.
+- **Guidance:** intake answers and technologies stay authoritative. Archived design.md becomes a reviewed reference.
+- **References:** all-or-nothing restoration, with no source-only mode.
+- **Limits:** reuse existing per-draft and per-reference limits, with a 64 MiB aggregate cap matching export.
+- **Scope:** both ComPlix and ordinary ZIPs.
+
+**Design consequences recorded in the plan:**
+
+- **Transport and commit:** staged chunk upload into a private table with one atomic finalize, because reference bytes exceed a single reducer request.
+- **Provenance:** imported source is stored as mode 'imported', behind a new isSourceDraft predicate; provider accounting stays on isChatMode.
+- **Paths:** ordinary ZIP components are re-rooted under Common/ or Compositions/, and broken cross-component imports are reported rather than rewritten.

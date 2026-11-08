@@ -719,3 +719,24 @@ Validation: frontend/module typechecks and production build passed (existing mai
 On refactor/remove-design-guidance-page, removed the navigation entry, page render/import/type, unused ProjectGuidance.tsx and page-only CSS. Old guidance URLs resolve to Components with canonical URLs on initial load/history; unfinished projects retain the existing setup gate. Updated reference empty-state wording, README and workspace design guide. Saved guidance, setup questionnaire, backend authorization/revision/persistence, generation snapshots and ZIP design exports remain intact. No backend/schema changes.
 
 Migrated tests away from the retired screen: session renewal now proves a persisted component mutation; project switching still checks technologies/navigation; standalone guidance persistence/revision validation stays covered at the backend; wizard guidance is checked through its authorized subscription. Added a browser check for absent navigation, old-route redirect, working Settings and retained export guidance. Six relevant tests passed across isolated runs: saved-guidance persistence and project switching (frontend 57873/backend 57800), organization grants/session renewal/reference uploads (57973/57900, exit 0), and removed-route/data preservation (58073/58000, exit 0). Frontend/module typechecks, production build and git diff --check passed; existing main-chunk warning remains. The broader four-test run had two passes then timed out on existing wizard PDF extraction before its guidance assertion, skipping the final route test, which passed independently. An initial test-only missing observer variable was corrected. Full suite was not rerun. No intake-form redesign, data deletion, provider/sandbox calls, publication, commit or push.
+
+
+## Intake component-import instructions - November 8, 2026
+
+Replaced the earlier standalone-dashboard proposal with implementable intake integration instructions. Inspected setup gating, job-keyed drafts, source-mode guards, starter reuse and the actual ZIP manifest. Covered bounded ZIP validation, atomic/idempotent persistence, imported provenance, binary references, source-consumer integration, inactive imported comments, starter collision protection, staged milestones and verification gates. Existing staged auth/session work was preserved. Documentation only; no application changes, builds, tests, provider calls, commit or publication.
+
+Plan review, same day: checked the plan's code claims against the code (fflate 0.8.3, export manifest v1/SHA-256/64 MiB, 20-file/256 KiB drafts, requireSetupInput, job-keyed drafts, starter name reuse). Added the owner decisions on setup gate, guidance, references and limits, plus fixes for review gaps: staged upload/atomic finalize, mode 'imported' with isSourceDraft, export origin labelling, reference filename/quota collisions, component re-rooting and preview limits for cross-component imports. Next: increment 1 (contract and validation fixtures). Still documentation only.
+
+### Increment 1: ZIP contract and validation (feat/component-zip-import)
+
+Added shared/componentImport.ts as pure data handling: no backend, UI or schema changes yet.
+
+- **ZIP reader:** reads the central directory itself, rejecting encryption, symlinks, ZIP64, multi-disk archives, unsupported compression, unsafe/traversal/Windows-reserved paths, duplicates and case collisions. Inflated bytes are counted against limits as they stream, so forged header sizes cannot bypass them. Limits: 2 MiB per entry, 8 MiB manifest, 2000 entries, 64 MiB compressed and expanded.
+- **ComPlix formatVersion 1 planner:** requires a single wrapper folder and verifies every SHA-256 checksum. Rejects undeclared, missing or doubly assigned files. Validates component names, categories, roots and draft limits, and returns the current exported source under rooted paths.
+- **References:** all are restored all-or-nothing, with exact bytes and stored text. Archived design.md is attached as a design reference.
+- **Review data:** every file gets an explicit disposition, and generated README/AGENTS files are handoff, never components. Components with external, unresolved or cross-component imports are flagged for preview limits.
+- **Conflict check:** projectConflicts reports existing component names, reference filename collisions and the 20-reference quota as issues that block confirmation.
+
+Checks run: `npm run typecheck` passed (frontend and module). `npx playwright test tests/componentImport.spec.ts tests/libraryExport.spec.ts tests/draftFiles.spec.ts tests/reference-files.spec.ts` passed 13/13. React and Blazor fixtures are real createLibraryZip output, so these are true round trips.
+
+Not done yet: ordinary-ZIP mapping (increment 4), staged backend persistence (increment 2) and intake UI and source consumers (increment 3). The safe chunk size against the server is not measured yet.
