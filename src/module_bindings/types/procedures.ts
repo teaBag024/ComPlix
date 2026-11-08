@@ -6,5 +6,14 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
+import * as BuildComponentPreviewProcedure from "../build_component_preview_procedure";
+import * as GenerateProjectChatProcedure from "../generate_project_chat_procedure";
+import * as RunEditorInstructionProcedure from "../run_editor_instruction_procedure";
 
+export type BuildComponentPreviewArgs = __Infer<typeof BuildComponentPreviewProcedure.params>;
+export type BuildComponentPreviewResult = __Infer<typeof BuildComponentPreviewProcedure.returnType>;
+export type GenerateProjectChatArgs = __Infer<typeof GenerateProjectChatProcedure.params>;
+export type GenerateProjectChatResult = __Infer<typeof GenerateProjectChatProcedure.returnType>;
+export type RunEditorInstructionArgs = __Infer<typeof RunEditorInstructionProcedure.params>;
+export type RunEditorInstructionResult = __Infer<typeof RunEditorInstructionProcedure.returnType>;
 

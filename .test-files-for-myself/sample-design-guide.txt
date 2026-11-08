@@ -1,0 +1,111 @@
+## Core Foundations & Philosophy
+
+* **Clarity over cleverness:** Content takes precedence over decoration. Visual flair serves navigation and hierarchy.
+* **Density with purpose:** Use compact tables and high-density layouts for data dashboards; use breathable, open layouts for onboarding and consumer-facing flows.
+* **Predictable affordance:** Interactive elements must look interactive. Standardized hover, active, and focus states across all interactive surfaces.
+
+---
+
+## 1. Color Palette & Token Architecture
+
+Adopt a token-based system (`primitive` $\rightarrow$ `semantic`) to support effortless theming and dark mode compatibility.
+
+### Primitive Neutrals (Slate / Zinc Base)
+
+* **Gray-900 (`#0F172A`):** Primary text and high-contrast foregrounds.
+* **Gray-700 (`#334155`):** Secondary text, labels, and inactive icons.
+* **Gray-400 (`#94A3B8`):** Placeholders, subtle borders, and disabled icons.
+* **Gray-200 (`#E2E8F0`):** Default borders, dividers, and card outlines.
+* **Gray-50 (`#F8FAFC`):** Canvas background and subtle alternating table row fills.
+* **White (`#FFFFFF`):** Surface backgrounds (cards, popovers, modals).
+
+### Functional & Semantic Tokens
+
+| Role | Light Hex | Dark Hex | Typical Usage |
+| --- | --- | --- | --- |
+| **Primary (Brand)** | `#2563EB` | `#3B82F6` | Primary action buttons, active tabs, focus rings |
+| **Primary Hover** | `#1D4ED8` | `#60A5FA` | Hover state for brand actions |
+| **Success** | `#16A34A` | `#22C55E` | Badges, confirmations, positive financial trends |
+| **Warning** | `#D97706` | `#F59E0B` | Session timeouts, non-destructive alerts, caveats |
+| **Destructive / Error** | `#DC2626` | `#EF4444` | Form errors, delete confirmations, failed syncs |
+| **Info** | `#0284C7` | `#38BDF8` | Inline hints, feature announcements, tooltips |
+
+---
+
+## 2. Typography
+
+Use system native stacks for zero layout shifts and instant performance, or a geometric humanist font like **Inter** or **Plus Jakarta Sans**.
+
+### Font Family Stacks
+
+* **Body & UI:** `Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+* **Monospace (Data / Code):** `"JetBrains Mono", "SF Mono", Consolas, monospace`
+
+### Type Scale (1.25 Major Third Scale)
+
+* **Display (`32px` / Line Height: `40px` / Bold):** Marketing headers, onboarding heroes.
+* **H1 (`24px` / Line Height: `32px` / Semi-Bold):** Primary page titles, top-level dashboard headers.
+* **H2 (`20px` / Line Height: `28px` / Semi-Bold):** Section headers, modal titles.
+* **H3 (`16px` / Line Height: `24px` / Medium):** Card titles, grouped fieldset legends.
+* **Body Regular (`14px` / Line Height: `20px` / Regular):** Default body copy, table data cells, input text.
+* **Body Small (`12px` / Line Height: `16px` / Regular & Medium):** Form field helper text, badge labels, timestamps.
+
+---
+
+## 3. Spacing, Grid & Depth
+
+### 4px / 8px Grid System
+
+All margins, padding, and layout dimensions adhere to standard multiples of 8px (with 4px for tight micro-spacing):
+
+* `4px` (`0.25rem`): Icon-to-text gaps, tight tag padding.
+* `8px` (`0.5rem`): Inline element spacing, form input internal vertical padding.
+* `16px` (`1.0rem`): Card body padding, standard gutter width.
+* `24px` (`1.5rem`): Spacing between form fields, widget separation.
+* `32px` (`2.0rem`): Section gaps within a dashboard view.
+
+### Elevation & Shadows
+
+* **Flat (`0px`):** Page canvas and base panels.
+* **Low / Card (`0 1px 3px rgba(0,0,0,0.06)`):** Default cards, standard table containers.
+* **Mid / Dropdown (`0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.04)`):** Dropdowns, popovers, context menus.
+* **High / Modal (`0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05)`):** Dialogs, command palettes (`Cmd+K`).
+
+---
+
+## 4. Key Component Patterns
+
+### Buttons
+
+* **Primary:** Filled brand color (`#2563EB`), high contrast white text. Reserve strictly for the single primary intent per viewport.
+* **Secondary:** Outlined with `Gray-200` border, white background, `Gray-900` text. Used for secondary actions (e.g., "Cancel", "Export").
+* **Ghost / Tertiary:** No border, transparent background, text changes color on hover. Used inside dense tables or toolbars.
+* **Destructive:** Red background (`#DC2626`) or outlined red. Always require confirmation for irreversible actions.
+* **Height Scale:** Compact (`32px` for tables/toolbars), Standard (`40px` default form buttons). Border radius fixed at `6px` or `8px`.
+
+### Form Controls
+
+* **Inputs & Selects:** Height: `40px`; Border: `1px solid #E2E8F0`; Radius: `6px`.
+* **State Behavior:**
+* **Focus:** Replace border with `Primary-600` and add a `3px` translucent ring (`rgba(37, 99, 235, 0.2)`). Never eliminate outline without providing a visible focus ring.
+* **Error:** Border changes to `Destructive-600` with inline validation text appearing beneath the input (never rely on tooltip alone).
+
+
+
+### Modals & Drawers
+
+* **Overlays:** Dark backdrop using `rgba(15, 23, 42, 0.45)` with `backdrop-filter: blur(4px)`.
+* **Dimensions:** Max widths pinned to set breakpoints: Small (`440px` for alerts), Medium (`600px` for simple forms), Large (`880px` for multi-step configuration).
+* **Escape Hatch:** ESC key dismisses modal; clicking outside closes modal *only* if the form contains no unsaved dirty state.
+
+---
+
+## 5. Accessibility & Motion Rules
+
+* **Contrast Ratios:** Maintain minimum WCAG AA ratio of **4.5:1** for regular text and **3:1** for large text and interactive UI borders.
+* **Keyboard Navigation:** Full focus trap inside modals; logical sequential `tabindex` on all interactive forms.
+* **Motion Tokens:**
+* Micro-interactions (hover, color transitions): `150ms ease-out`
+* Layout shifts (drawers, expand/collapse accordions): `250ms cubic-bezier(0.16, 1, 0.3, 1)`
+* Full-screen dialogs / page views: `200ms ease-in-out`
+* Always respect `@media (prefers-reduced-motion: reduce)`.

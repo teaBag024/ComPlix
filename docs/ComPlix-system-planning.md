@@ -1,12 +1,12 @@
 # ComPlix — System Planning Document
 
-Version 1.2 · November 7, 2026  
+Version 1.5 · November 7, 2026
 Audience: project owner, collaborators, and future AI development assistants  
 Status: consolidated planning baseline; no implementation or deployment is claimed.
 
 ## 1. Purpose and decision status
 
-ComPlix generates and maintains custom, reusable UI component libraries. This document consolidates the original product documents, saved planning notes, and subsequent conversation through the renderer discussion and the November 7, 2026 selection of SpacetimeDB. It focuses on internal behavior and architecture; screen layouts are deferred.
+ComPlix generates and maintains custom, reusable UI component libraries. This document consolidates the original product documents, saved planning notes, and subsequent conversation through the renderer discussion and the November 7, 2026 selection of SpacetimeDB. It focuses on internal behavior and architecture. Screen layouts were initially deferred; the owner-confirmed workspace direction is recorded in section 24 and detailed in [design-guide.md](./design-guide.md).
 
 Status labels:
 
@@ -24,7 +24,7 @@ A general acknowledgement does not approve every suggested tool, version, or ope
 | --- | --- | --- | --- |
 | D01 | Product boundary | Generate components and complex compositions, not complete pages or application backends | Confirmed |
 | D02 | Reuse | Generate a Common foundation first; later components reuse it | Confirmed |
-| D03 | Project stack | One target stack per project; separate component libraries | Confirmed |
+| D03 | Project technology details | Open-ended requested frameworks, languages, styling, libraries and relevant versions; isolated library and guidance per project; verified generation support tracked separately | Confirmed owner clarification, November 7, 2026; supersedes fixed-profile-only project model |
 | D04 | Prototype outputs | Blazor + Bootstrap and React + TypeScript + Tailwind + shadcn/ui | Confirmed |
 | D05 | Builder frontend | React + TypeScript | Confirmed |
 | D06 | Builder backend | SpacetimeDB replaces the Flask + SQLite direction | Confirmed owner decision, November 7, 2026; TypeScript/local foundation implemented; hosted deployment open |
@@ -39,7 +39,7 @@ A general acknowledgement does not approve every suggested tool, version, or ope
 | D15 | Historical restoration | Arbitrary older-component restoration deferred | Working prototype boundary |
 | D16 | Rendering | Actual-code previews using separate React and Blazor environments | Confirmed requirement; proposed hosting design below |
 | D17 | Documentation/export | Comprehensive synchronized docs, IDE hover help, full/selective downloads | Confirmed |
-| D18 | Client projects | One saved project per client initially; multiple later | Confirmed |
+| D18 | Ownership and sharing | Multiple projects per user; private projects need no organization; optional organization association and project-specific sharing with organization members | Confirmed owner clarification, November 7, 2026; supersedes mandatory organization ownership and one-project limits |
 | D19 | AI access | Client supplies API key initially; provider/model and retention undecided | Confirmed direction |
 | D20 | Delivery | Original goal is a limited-budget, three-week prototype | Existing scope constraint; current dates and feasibility require reassessment |
 
@@ -110,7 +110,9 @@ The **builder stack** implements ComPlix. An **output stack** describes a genera
 | File storage | Database metadata plus external file storage proposed | Local/object storage choice and backup |
 | Preview host | Framework-specific preview environments | Hosting and isolation technologies |
 
-A stack profile is the project's recorded framework, language, styling approach, foundation, compatible versions, and generation/build/export rules. Support is limited to tested combinations; a framework dropdown does not imply support for every configuration.
+Project details record the user's requested frameworks, languages, styling approach, libraries and relevant versions. These choices are open-ended; React/MUI and Angular are examples, not a complete catalog. Projects must not be restricted to the two prototype profiles. Recording a request does not establish generation support.
+
+A generation profile is a proposed versioned, tested configuration of generation/build/preview/documentation/export rules matched against project technology details. It does not replace those details or define which projects may exist. The two required prototype profiles remain the initial implementation targets; additional combinations require verification before claiming support. Multiple requested technologies do not imply automatic cross-framework translation or simultaneous multi-target generation; that behavior remains open.
 
 ### Superseded backend history
 
@@ -382,7 +384,7 @@ Suggested acceptance evidence:
 13. Hover documentation is verified in an agreed editor.
 14. Credentials do not appear in generated artifacts or preview execution.
 
-Future or uncommitted: Angular support, multiple projects per client, product-funded model choice, IDE/Figma integrations, arbitrary historical restoration, public sharing, billing, marketplace, package publishing, team collaboration, broad stack combinations, and full application generation.
+Future or uncommitted: verified Angular generation support, product-funded model choice, IDE/Figma integrations, arbitrary historical restoration, public sharing, billing, marketplace, package publishing, broader collaboration, verified generation for additional stack combinations, and full application generation. Multiple projects, optional organizations and open-ended technology requests are confirmed requirements; see section 22.
 
 ## 17. Open decisions and next planning order
 
@@ -458,7 +460,7 @@ The following proposed architecture is not implicitly approved by selecting Spac
 
 Validate accepted issuer and audience in module authorization paths, including directly callable operations; do not rely only on connection admission. The integration service independently verifies credentials intended for its audience and authorizes each project operation. Decide its audience/token exchange explicitly rather than assuming every SpacetimeDB token is valid for another service. A worker uses a separate approved service identity, not the database owner's deployment credentials or a user's browser token.
 
-**Persistent state:** recommend one ComPlix database/module initially, with application-enforced project isolation, not a database per client. Candidate private records: clients/owners, projects, questionnaire drafts, design rules, messages, components/revisions, dependencies, generation jobs/attempts, validation summaries, change sets and artifact metadata. Link records to a project and owner; index owner/project lookup paths. Enforce one project per client transactionally. Exact schema and whether source/docs are inline or immutable external files remain open.
+**Persistent state:** recommend one ComPlix database/module initially, with application-enforced project isolation, not a database per client. Candidate private records: clients/owners, projects, questionnaire drafts, design rules, messages, components/revisions, dependencies, generation jobs/attempts, validation summaries, change sets and artifact metadata. Link records to a project and owner; index owner/project lookup paths. Enforce per-project authorization transactionally. The earlier one-project-per-client constraint is superseded by section 22. Exact schema and whether source/docs are inline or immutable external files remain open.
 
 A small reducer saves an authorized draft checkpoint. A promotion reducer updates all related current revisions and recovery references together only after required checks and starting-state checks. This keeps the confirmed failure-preservation behavior. Backend durability does not implement application undo/redo: explicit revision/change-set records still do. Backup/restore must cover database state and referenced artifacts together.
 
@@ -512,7 +514,7 @@ Before AI/build workflow:
 - Decide artifact storage/limits/backup/retention and preview-origin authorization/network policy.
 - Retain existing open choices: starter Common inventory, input formats, design-memory authority, preference/configuration undo scope, export format and hover-verification editor.
 
-**Proposed first increment:** sign in, create a project with either supported profile identifier, save/reopen a draft and see its state update in a second session. Acceptance: one-project rule, rejected malformed/unauthorized operations, no cross-client reads through queries/subscriptions, reconnect initialization, durable restart recovery and no secrets in synchronized state. Test module publication/schema evolution without deleting saved data. This does not claim generation or either runtime preview works.
+**Proposed first increment:** sign in, create a project with either supported profile identifier, save/reopen a draft and see its state update in a second session. Historical foundation acceptance (one-project limit now superseded): rejected malformed/unauthorized operations, no cross-client reads through queries/subscriptions, reconnect initialization, durable restart recovery and no secrets in synchronized state. Test module publication/schema evolution without deleting saved data. This does not claim generation or either runtime preview works.
 
 ### Official research sources
 
@@ -537,3 +539,77 @@ The owner authorized implementation and approved local standalone Spacetime with
 All application backend rules for this increment run in Spacetime. No separate API, worker, upload/preview service or hosted resource was added. Local credentials/data/tools remain ignored; the browser token has no account recovery or cross-device login. Hosted OIDC and the broader section 19 recommendations remain separate decisions.
 
 Actual tests and start commands are recorded in progress.md and README.md. The tested local foundation is complete; broader onboarding, draft design guidance, generation, revision promotion/recovery, exports and actual generated-code previews remain unimplemented. This does not establish production readiness or revise those product requirements.
+
+## 21. Organization sign-in increment — November 7, 2026 (historical implemented scope)
+
+Subsequent confirmed owner decisions bring organization/project collaboration into prototype scope: SpacetimeAuth sign-in with Google, GitHub and email magic links; identity/name/verified email; multiple organization memberships; one project per organization; owner/admin management with editor/viewer grants. Ordinary membership alone provides no project access. This supersedes the earlier individual-client project limit and blanket deferral of collaboration. Broader collaboration features remain future.
+
+The TypeScript module now implements the private organization/membership/grant model and original-project transfer; the frontend implements OIDC integration and shared workspace UI. These run locally against hosted authentication; no new external application API/worker was introduced. The old project table is preserved and imported only with old-token proof. Detailed accepted rules and useful sources are in decisions.md.
+
+Automated local acceptance uses signed identity fixtures and seeded OIDC sessions; real Google/GitHub/email completion remains unverified until exercised by a user. Do not mark the entire auth milestone complete based on the local tests. Invitation delivery is in-app, not email. Provider-side account linking is not promised. See progress.md for checks, reported redirect issue and remaining manual acceptance.
+
+### Tab session follow-up
+
+Confirmed owner preference: retain sign-in until the tab closes. The OIDC client requests offline_access and renews credentials automatically, with user credentials and PKCE state in sessionStorage. Server token-expiry checks remain enforced; provider expiry/revocation can require sign-in again. Browser session restoration can restore tab storage. Google login and Google-to-GitHub invitations were reported working by the owner; real-provider refresh remains unverified.
+
+## 22. Current project ownership and technology requirements — November 7, 2026
+
+**Confirmed by explicit owner clarification; supersedes conflicting earlier sections and the assistant's interpretation of a brief acknowledgement:**
+- A user can have multiple projects. Do not impose one project per user or organization.
+- A project can be a private personal project with no organization. Organization ownership/association is not mandatory.
+- Projects can be shared with people in the same organization using project-specific grants. Organization membership must not by itself expose private personal projects.
+- Every project has its own library, design guidance and requested technology details. Any framework, language or libraries can be requested; the data model must not restrict project creation to the two prototype output profiles.
+- Requested technology choices and verified generation/build/preview/export capabilities are separate facts. The two existing prototype combinations remain required initial generation targets, not the entire product catalog. Additional technology support is not claimed as implemented.
+
+**Historical implementation gap (addressed by section 23):** the previous module required an organization, enforced unique organizationId and selected a fixed outputStack. The migration removes that unique constraint, appends defaulted ownership/technology fields and preserves IDs, grants and guidance. See progress.md for validation status.
+
+**Proposed next increment:** implement personal project ownership with optional organization association, project listing/selection/creation, open-ended technology details and project-specific sharing before generation. Validate separate guidance per project, denied cross-project reads/writes, private-project invisibility to ungranted organization members, multiple projects in personal/org contexts, and data-preserving migration of existing projects/grants/guidance.
+
+**Open, not approved:** whether association grants organization administrators implicit management; who may associate, detach or transfer projects; one versus multiple organization associations; behavior when a collaborator leaves an organization; technology edits after components exist; profile matching and multi-target generation semantics. Do not infer answers from the existing org-only schema. Private-project ownership must remain explicit and organization sharing must be deliberate.
+
+## 23. Private and shared multi-project increment — November 7, 2026
+
+Owner authorized this milestone and explicitly chose removal of grants on organization departure; rejoining must not restore them. The recommendation that organization admins receive no implicit access to personal projects is carried into the authorized implementation.
+
+New projects are personally owned by their creator, with optional sharing through one organization. Any member may create their own project; only the project owner chooses/changes its sharing organization and grants viewer/editor access to current organization members. An editor can rename the project, edit requested technologies and save guidance; editing does not imply sharing/ownership management. Changing/removing the organization clears grants and pending invitation project grants without transferring ownership. A departing personal owner retains the project privately and all its sharing is removed. Organization owners cannot leave until ownership-transfer support exists; transfer remains future work.
+
+Existing organization-owned projects retain their original organizational ownership/admin management, grants, IDs and guidance. They are explicitly labeled in the UI. They are not silently converted into a creator's personal property. The old legacy-token handoff remains proof-of-possession based and can now import as a private project.
+
+Framework(s), language(s), styling, libraries and version/compatibility notes are separate open text fields (1000 characters each, blank allowed). Two optional starting-point presets fill these fields; users can edit them or choose custom. No generation support is claimed for any recorded request. Technology edits use revision checks; questionnaire/design guidance keeps its existing autosave/recovery behavior per project.
+
+Migration uses the documented removal of unique constraints and appended columns with defaults. The internal organizationId value 0 represents no organization; real organization IDs are generated from 1. The public UI calls this Private/no organization. Existing createdBy remains provenance; ownership mode distinguishes legacy organization ownership from new personal ownership.
+
+Deferred: ownership transfer/conversion, sharing across multiple organizations, anonymous/public links, project deletion, automatic technology compatibility checks and code migration. Generation, actual-code previews, workers and exports remain outside this milestone. Both initial output profiles remain required generation targets.
+
+## 24. Workspace layout and interaction preferences — November 7, 2026
+
+**Confirmed by explicit owner request:** sign-in opens a card grid of the user's projects. A separate shared-projects view filters by a selected organization. Opening a project shows its components workspace, with a toggleable component list, a preview/code area and a chat area. Project settings provide project configuration, including view-only requested technologies and references.
+
+The simple responsive layout and implementation boundaries are documented in [design-guide.md](./design-guide.md). When a backend capability is unavailable, the UI may provide a small, clearly labeled placeholder; it must not imply that chat, generated output, previews or validation are connected when they are not.
+
+## 24. Project reference intake - November 7, 2026
+
+Owner authorized project-specific reference intake and explicitly approved private inline SpacetimeDB storage for the initial text-only scope: 128 KiB per file, 20 references per project. Store original bytes and readable text plus purpose/uploader/time. Existing project permissions govern reads; editors upload/remove and viewers read. References remain untrusted data: no code execution, rendered HTML or automatic application of reference instructions. They do not change the current working library.
+
+Initial intake supports UTF-8 Markdown/text and selected source files, with client/server validation, project-scoped live lists, processing/error feedback and plain-text previews. Synchronous Ready status means readable text was decoded, not AI analysis. Duplicate filenames are rejected within the project rather than overwritten. Confirmed removal deletes the uploaded reference; intake undo is not implemented. Failed uploads preserve existing references.
+
+Deferred: PDF/image/ZIP extraction, repository imports, document-link retrieval, external storage, semantic indexing, AI consumption and formal reference-precedence/conflict policy. Nemotron generation remains separate. Requested technology configurations remain open-ended; verified generation/build/preview support is a distinct concern, initially required for both prototype stacks.
+
+## 25. Workspace navigation correction — November 7, 2026
+
+The owner's follow-up rejects tabs in favor of distinct pages. Project list, project components, settings, guidance, references, sharing, organizations, and invitations must render as separate URL-backed pages with browser history navigation; inactive pages should not remain mounted. This supersedes the earlier tab-navigation implementation note. See [design-guide.md](./design-guide.md) for the UI preferences and prototype boundaries.
+
+## 26. Frontend visual guide — November 7, 2026
+
+The owner designated [frontend-design-guide.html](./frontend-design-guide.html) as the visual reference for the React frontend. It specifies an organic sage/forest-green visual system with semantic light/dark themes, light by default, typography, horizontal navigation, and URL-backed project-page mockups. The canonical component workspace path is `/projects/:id/components`; primary project navigation is Components, Design guidance, and Settings. Existing product boundaries and backend truth remain authoritative; a visual mockup does not establish a backend capability.
+
+## 27. Organization workspaces and project invitations — November 7, 2026
+
+The owner approved an organization-card directory at `/organizations`, with each organization opening a URL-backed workspace at `/organizations/:id`. Overview, Projects, Members & invitations, and Settings are separate pages. The Projects page exposes only projects the caller can access and opens each through its regular project workspace. Owners and admins can rename organizations; existing organization role rules remain otherwise unchanged.
+
+The owner also approved project-only invitations that do not create organization membership, alongside organization-only and organization-plus-project choices. Project-only invitation acceptance creates an explicit project grant for the invited user's verified email-matched identity. Existing project isolation and organization departure/removal grant cleanup remain required. Online collaborator presence/activity in project docs is future work.
+
+
+## 26. Built-in AI chat and operator credentials - confirmed correction
+
+The owner explicitly clarified that ComPlix comes with project chat and end users never supply AI keys. Backend operator configuration supplies the provider credential and model. This supersedes all per-user/per-request key-entry proposals and their temporary implementation. The private .local/backend.env file is local operator setup; SpacetimeDB protects persisted backend environment values. Built-in chat uses authenticated project access, saved guidance/references, bounded conversation and latest draft context, with server-enforced usage limits. Discussion replies and generated draft files are shared only within authorized project access. Actual generation does not imply successful builds, previews or promotion. See decisions.md decision 27 and README for the current implementation boundary and setup.
