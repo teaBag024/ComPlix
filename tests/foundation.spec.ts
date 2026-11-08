@@ -517,7 +517,7 @@ test('browser sessions share edits, enforce viewer UI and clear access on member
   await contextA.close(); await contextB.close();
 });
 
-test('refresh keeps the same identity beyond original expiry and tab credentials do not enter local storage', async ({ browser }) => {
+test('refresh keeps the same identity beyond original expiry and the session is shared through local storage', async ({ browser }) => {
   const context = await browser.newContext();
   const claims = JSON.parse(Buffer.from(ownerToken.split('.')[1], 'base64url').toString());
   const oldExpiry = Math.floor(Date.now() / 1000) + 5;
@@ -548,7 +548,9 @@ test('refresh keeps the same identity beyond original expiry and tab credentials
   await expect.poll(() => [...observer.conn.db.visibleComponents.iter()].some(row => row.projectId === project.id && row.name === 'RenewedButton')).toBe(true);
   await page.reload();
   await expect(page.getByTestId('project-name')).toHaveText('Edited together');
-  expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('oidc.')))).toBe(false);
+  // The session is shared by all tabs of this browser profile; nothing is left in per-tab storage.
+  expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('oidc.user:')))).toBe(true);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).some(key => key.startsWith('oidc.user:')))).toBe(false);
   await context.close();
   const fresh = await browser.newContext();
   const freshPage = await fresh.newPage();
@@ -1556,7 +1558,7 @@ test('renewal follows the actual ID token when the stored OIDC profile says it e
   const page = await context.newPage(); await page.goto('/');
   await expect.poll(() => refreshes).toBe(1);
   await expect(page.getByTestId('profile-email')).toHaveText('raw-expiry@example.test');
-  const stored = await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('oidc.user:')).map(key => JSON.parse(sessionStorage.getItem(key)!)));
+  const stored = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('oidc.user:')).map(key => JSON.parse(localStorage.getItem(key)!)));
   expect(stored[0].id_token).toBe(token);
   await openProjectPage(page, 'Renewed component creation');
   await createBrowserComponent(page, 'RenewedButton');
@@ -2086,6 +2088,99 @@ test('removed guidance page redirects to Components and retains saved generation
   expect([...owner.conn.db.visibleGuidance.iter()].find(row => row.projectId === project.id)?.guidance).toBe('Keep the saved rules');
   const snapshot = await owner.conn.procedures.prepareLibraryExport({ projectId: project.id });
   expect(snapshot.guidance).toContainEqual({ label: 'guidance', content: 'Keep the saved rules' });
+});
+
+/** Fake SpacetimeAuth: discovery, a refresh grant that rotates its token once, and counted provider redirects. */
+async function fakeProvider(context: BrowserContext, renewed: string, options: { reject?: boolean } = {}) {
+  const calls = { refreshes: 0, rejected: 0, authorize: 0, spent: new Set<string>() };
+  await context.route('https://auth.spacetimedb.com/**', route => {
+    const url = route.request().url();
+    if (url.includes('.well-known')) return route.fulfill({ json: { issuer: authority, authorization_endpoint: authority + '/authorize', token_endpoint: authority + '/token', jwks_uri: authority + '/jwks', end_session_endpoint: authority + '/logout' } });
+    if (url.includes('/authorize')) { calls.authorize++; return route.fulfill({ contentType: 'text/html', body: '<h1>Provider sign-in</h1>' }); }
+    if (url.includes('/logout')) return route.fulfill({ status: 302, headers: { location: frontendOrigin + '/' } });
+    const form = new URLSearchParams(route.request().postData() ?? '');
+    if (form.get('grant_type') !== 'refresh_token') return route.abort();
+    const presented = form.get('refresh_token') ?? '';
+    // Rotation: a refresh token works once. Reuse (for example, by a second tab) is refused like a real provider.
+    if (options.reject || calls.spent.has(presented)) { calls.rejected++; return route.fulfill({ status: 400, json: { error: 'invalid_grant' } }); }
+    calls.spent.add(presented); calls.refreshes++;
+    return route.fulfill({ json: { id_token: renewed, access_token: 'shared-access-' + calls.refreshes, refresh_token: 'shared-refresh-' + calls.refreshes, token_type: 'Bearer', expires_in: 3600 } });
+  });
+  return calls;
+}
+const expiredCopy = (token: string) => signed({ ...JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()), exp: Math.floor(Date.now() / 1000) - 120 });
+
+test('an expired session restores silently on load and keeps the page you were on', async ({ browser }) => {
+  const owner = await connect(await makeToken('silent-restore@example.test', 'Silent Restore'));
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Silent restore project', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: '', libraries: '', versions: '' });
+  const project = [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Silent restore project')!;
+  const context = await browser.newContext();
+  await seedBrowser(context, expiredCopy(owner.token), 'silent-restore-refresh', Math.floor(Date.now() / 1000) - 120);
+  const provider = await fakeProvider(context, owner.token);
+  const page = await context.newPage();
+  await page.addInitScript(() => new MutationObserver(() => {
+    if ([...document.querySelectorAll('button')].some(button => button.textContent === 'Sign in')) (window as any).sawSignIn = true;
+  }).observe(document, { childList: true, subtree: true }));
+  await page.goto(`/projects/${project.id}/settings`);
+  await expect(page.getByRole('region', { name: 'Project settings', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/settings$`));
+  expect(provider.refreshes).toBe(1);
+  expect(provider.authorize).toBe(0);
+  expect(await page.evaluate(() => (window as any).sawSignIn === true)).toBe(false);
+  await context.close();
+});
+
+test('tabs share one session: a duplicated expired tab spends one refresh and neither tab signs in again', async ({ browser }) => {
+  const owner = await connect(await makeToken('shared-tabs@example.test', 'Shared Tabs'));
+  const context = await browser.newContext();
+  // Both tabs start from the same copied refresh token, like a duplicated tab.
+  await seedBrowser(context, expiredCopy(owner.token), 'duplicated-refresh', Math.floor(Date.now() / 1000) - 120);
+  const provider = await fakeProvider(context, owner.token);
+  const [first, second] = await Promise.all([context.newPage(), context.newPage()]);
+  await Promise.all([first.goto('/'), second.goto('/')]);
+  await expect(first.getByTestId('profile-email')).toHaveText('shared-tabs@example.test');
+  await expect(second.getByTestId('profile-email')).toHaveText('shared-tabs@example.test');
+  expect(provider.refreshes).toBe(1);
+  expect(provider.rejected).toBe(0);
+  expect(provider.authorize).toBe(0);
+  // A brand-new tab is signed in immediately from the shared session.
+  const third = await context.newPage(); await third.goto('/projects');
+  await expect(third.getByTestId('profile-email')).toHaveText('shared-tabs@example.test');
+  expect(provider.refreshes).toBe(1);
+  await context.close();
+});
+
+test('a refused refresh token redirects to the provider once automatically and never loops', async ({ browser }) => {
+  const owner = await connect(await makeToken('refused-refresh@example.test', 'Refused Refresh'));
+  const context = await browser.newContext();
+  await seedBrowser(context, expiredCopy(owner.token), 'refused-refresh', Math.floor(Date.now() / 1000) - 120);
+  const provider = await fakeProvider(context, owner.token, { reject: true });
+  const page = await context.newPage();
+  await page.goto('/projects');
+  await expect(page.getByRole('heading', { name: 'Provider sign-in', exact: true })).toBeVisible();
+  expect(provider.authorize).toBe(1);
+  // Coming back without completing sign-in shows the button instead of redirecting again.
+  await page.goto('/projects');
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect(provider.authorize).toBe(1);
+  await context.close();
+});
+
+test('signing out in one tab signs out the other tabs', async ({ browser }) => {
+  const owner = await connect(await makeToken('shared-signout@example.test', 'Shared Signout'));
+  const context = await browser.newContext();
+  await seedBrowser(context, owner.token);
+  const provider = await fakeProvider(context, owner.token);
+  const first = await context.newPage(); await first.goto('/');
+  await expect(first.getByTestId('profile-email')).toHaveText('shared-signout@example.test');
+  const second = await context.newPage(); await second.goto('/');
+  await expect(second.getByTestId('profile-email')).toHaveText('shared-signout@example.test');
+  // A healthy session never visits the provider's sign-in page.
+  expect(provider.authorize).toBe(0);
+  await first.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(second.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+  expect(await second.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('oidc.user:')))).toBe(false);
   await context.close();
 });
 

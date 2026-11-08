@@ -622,3 +622,5 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-bubble-system { padding: 2px 4px; border-radius: 0; background: transparent; color: var(--text-muted); font-size: 10.5px; font-style: italic; text-align: left; }
 /* Keep "ComPlix is thinking" in view even when the conversation is long and scrolled. */
 .chat-typing-row { position: sticky; bottom: 0; z-index: 1; max-width: 100%; padding: 8px 0 2px; background: linear-gradient(to bottom, transparent, var(--bg-elevated) 30%); }
+
+.session-banner { position: fixed; z-index: 30; top: 12px; left: 50%; transform: translateX(-50%); margin: 0; padding: 6px 14px; border: 1px solid var(--border-subtle); border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); font-size: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, .08); }

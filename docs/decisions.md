@@ -512,6 +512,23 @@ Owner requested a roughly ten-second highlight that fades away on newly added Co
 
 Owner requested removing the standalone Design guidance page. Remove its navigation, route view, unused frontend component and styles; legacy guidance URLs resolve to Components (or the existing setup gate for unfinished projects). Retain all saved guidance, questionnaire intake, backend revision/access rules, generation context and ZIP design.md export. No data deletion or backend migration is part of this UI removal. This supersedes earlier guidance-page navigation requirements.
 
+## Shared, silent sign-in sessions - November 8, 2026
+
+**Owner decision:** keep the session shared across tabs. This supersedes the earlier confirmed choice to retain sign-in only until the tab closes. Prompt: frequent re-authentication was disrupting work.
+
+- **Shared storage:** OIDC user state (ID, access and refresh tokens) is stored in `localStorage` and shared by all tabs. It persists across reloads and browser restarts until the refresh token expires or the user signs out. PKCE state stays per tab. Sessions saved per tab by earlier builds migrate automatically, keeping the fresher copy.
+- **Single refresher:** renewal runs under a Web Locks API lock. A tab that waited adopts a session another tab already renewed instead of reusing a possibly rotated refresh token. Tabs follow each other through `storage` events, and signing out anywhere signs out everywhere.
+- **Expired but renewable is not signed out:**
+  - The Sign in screen appears only when there is no session, no refresh token, or the provider refused the refresh token.
+  - An open workspace stays mounted while renewing.
+  - A fresh load shows "Restoring your session…".
+  - "Expired" is computed from the current token on each render. A timer flag previously fired before the session loaded and flagged valid sessions as expired for one render.
+- **Automatic recovery:** a refused refresh token triggers one automatic provider redirect per tab per 5 minutes, so it can never loop. The return path is validated as a same-origin app path and restored after sign-in.
+
+**Tradeoff (accepted):** anyone with access to the same browser profile stays signed in until sign-out, and tokens in `localStorage` persist on disk. Exposure to script injection is unchanged from `sessionStorage`.
+
+**Unchanged:** server-side expiry is still enforced on every mutation.
+
 
 ## Existing component import within intake: implementation plan - November 8, 2026
 

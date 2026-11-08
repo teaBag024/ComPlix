@@ -720,6 +720,25 @@ On refactor/remove-design-guidance-page, removed the navigation entry, page rend
 
 Migrated tests away from the retired screen: session renewal now proves a persisted component mutation; project switching still checks technologies/navigation; standalone guidance persistence/revision validation stays covered at the backend; wizard guidance is checked through its authorized subscription. Added a browser check for absent navigation, old-route redirect, working Settings and retained export guidance. Six relevant tests passed across isolated runs: saved-guidance persistence and project switching (frontend 57873/backend 57800), organization grants/session renewal/reference uploads (57973/57900, exit 0), and removed-route/data preservation (58073/58000, exit 0). Frontend/module typechecks, production build and git diff --check passed; existing main-chunk warning remains. The broader four-test run had two passes then timed out on existing wizard PDF extraction before its guidance assertion, skipping the final route test, which passed independently. An initial test-only missing observer variable was corrected. Full suite was not rerun. No intake-form redesign, data deletion, provider/sandbox calls, publication, commit or push.
 
+## Shared, silent sign-in sessions - November 8, 2026
+
+Built on `feat/silent-session-renewal` in a separate git worktree (`../Complix-worktrees/silent-session`), based on `db39014`, so the other agent's work in the main folder was untouched.
+
+Changes:
+- Added `src/authSession.ts`: shared user manager, legacy session migration, cross-tab locked renewal, tab following, auto-sign-in guard and return-path validation.
+- Rewrote the sign-in gate in `main.tsx`.
+- Fixed the latent "expired before load" flag.
+
+Checks actually run:
+- Typecheck passed.
+- New return-path unit test passed.
+- 10 focused browser and API tests passed, including four new ones:
+  - an expired session restores silently on the same page with no sign-in screen;
+  - a duplicated expired tab spends exactly one refresh, and a third tab is signed in from the shared session;
+  - a refused refresh redirects to the provider once and does not loop;
+  - signing out in one tab signs out the others, and a healthy session never visits the provider.
+- Two existing tests were updated for the new storage policy.
+
 
 ## Intake component-import instructions - November 8, 2026
 
