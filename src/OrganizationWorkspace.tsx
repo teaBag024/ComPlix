@@ -303,7 +303,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
             go={step => void navigate('setup', project.id.toString(), undefined, step)} openLibrary={() => void navigate('library', project.id.toString())}
             guidance={data.guidance.find(row => row.projectId === project.id)} references={data.references.filter(row => row.projectId === project.id)}
             tasks={data.starterTasks.filter(row => row.projectId === project.id)} components={data.components.filter(row => row.projectId === project.id)}
-            chatEnabled={data.chatEnabled} connection={connection} />}
+            imports={data.imports.filter(row => row.projectId === project.id)} chatEnabled={data.chatEnabled} connection={connection} />}
           </section>}
           {route.page === 'library' && <section className="route-page" aria-label="Components">
           {project?.setupState === 'generating' && <p role="status" className="setup-banner">Starter components are still being generated. <Button type="button" variant="secondary" onClick={() => void navigate('setup', project.id.toString(), undefined, 'progress')}>View progress</Button></p>}

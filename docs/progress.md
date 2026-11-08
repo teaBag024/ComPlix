@@ -763,3 +763,28 @@ Checks run:
 - Real local server: 15 foundation tests passed, the 2 new import tests plus 13 existing setup, starter, PDF, draft, chat, editor-instruction and export tests. The import tests cover outsider rejection, a multi-chunk 1.5 MiB PDF, re-sent and conflicting chunks, incomplete upload, replay, digest reuse, exact reference bytes, unchanged intake technologies, the starter clash, the setup gate, the post-setup rejection, editing imported source, the inherited `@complix` marker staying inert, the imported export origin, rollback on a reference conflict with retry from retained staging, a tampered checksum and cancel.
 
 Not run: the full foundation suite and the browser tests. The maximum server chunk size was not measured; only 1 MiB chunks were verified. Next: increment 3 (intake review UI and frontend source consumers, including the ProjectLibrary `isSourceDraft` label and edit gating and the setup-screen gate text).
+
+### Increment 3: intake review UI and frontend source consumers (feat/component-zip-import)
+
+- **src/ComponentImport.tsx:** an optional "Import existing components" panel in the Documents step. The questionnaire and document upload are unchanged.
+  - **Review:** after the user picks a ZIP, it shows a recognition summary (files, expanded size), components with category, root, file count and preview warnings, and references with purpose, size and the archived-design marker. It also lists archived technologies for review only (intake values are kept) and every file's disposition.
+  - **Conflicts:** blocking conflicts from `projectConflicts` are recomputed live, so removing a clashing intake upload re-enables confirmation without re-choosing the ZIP.
+  - **Confirm:** chunked upload with progress, then `finalizeImport`. Server and parser messages are shown, and a reload before confirming requires choosing the ZIP again (stated in the UI).
+  - **Done state:** shows counts from `visible_imports`.
+- **Data:** `visible_imports` is added to workspace data and subscriptions, and passed to the setup screen.
+- **ProjectSetup:**
+  - The gate accepts an import, matching the backend.
+  - After an import the step heading is "Your imported library is ready", and "Open imported library" is the main action (finish setup without starters).
+  - Starters are unselected by default. Names already in the library are disabled ("Already in your imported library."), and the starter-clash server error is in the known-error list.
+- **ProjectLibrary:** imported drafts are editable, previewable and used as chat context through `isSourceDraft`, with the label "Imported · unverified". Provider activity indicators keep `isChatMode`.
+
+Checks run:
+- `npm run typecheck` and `npm run build` passed (the existing large-chunk warning remains).
+- New browser test on a real server passed: ZIP review, a design.md conflict blocking confirmation, live resolution, import, the setup gate, disabled clashing starter, no starter tasks, opening the library and showing imported code with its label.
+- Regression with `--timeout 150000`, 7/7 passed: Library mock workflow, multi-file editor, component explorer, setup wizard and the three import tests.
+
+Not done or not verified:
+- With the default 45s timeout, the first browser test of a run timed out on its first page load. The machine was at about 77% CPU, and the dev server took about 12s to serve `/` even warm. Not compared against HEAD.
+- Archived references can't be renamed in the UI; conflicts are resolved by removing the intake upload.
+- Ordinary (non-ComPlix) ZIP mapping (increment 4) is not implemented, and its UI rejects them with an explicit message.
+- The full foundation suite was not run.

@@ -2,7 +2,7 @@ import { Button } from './components/Button';
 import { LibraryDownload } from './LibraryDownload';
 import { CodeEditor, AGENT_HIGHLIGHT_MS } from './components/CodeEditor';
 import { EditorInstructions } from './EditorInstructions';
-import { isChatMode } from '../shared/generationWorkflow';
+import { isChatMode, isSourceDraft } from '../shared/generationWorkflow';
 import { useDraftEditor } from './useDraftEditor';
 import { StackPreview } from './StackPreview';
 import { selectStackAdapter, type TargetStack } from '../shared/stackAdapters';
@@ -93,7 +93,7 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
     return () => { if (draftGuard) draftGuard.current = undefined; };
   }, [draftGuard]);
   files = editor.files;
-  const canEdit = editable && !selectedJobDeleted && job && isChatMode(job.mode) && job.state === 'draft_ready' && files.length > 0;
+  const canEdit = editable && !selectedJobDeleted && job && isSourceDraft(job.mode) && job.state === 'draft_ready' && files.length > 0;
   const file = files.find(item => item.path === selectedFile) ?? files[0];
   const documents = adapter?.documentation(files) ?? files.filter(item => /\.(md|mdx|xml)$/i.test(item.path));
   const document = documents.find(item => item.path === selectedFile) ?? documents[0];
@@ -150,7 +150,7 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
           <ul>{candidates.map(candidate => <li key={candidate.id.toString()}>
             <Button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={candidate.id === job?.id} onClick={() => { setSelectedExample(''); setSelectedJob(candidate.id.toString()); setView('preview'); }}>
               {candidate.request}
-            </Button><span>{candidate.componentId && !candidate.model ? 'Starter draft - unverified' : candidate.mode === 'gemini' ? 'Gemini + Nemotron draft · unverified' : isChatMode(candidate.mode) ? 'NVIDIA draft · unverified' : 'Mock candidate'}</span>
+            </Button><span>{candidate.mode === 'imported' ? 'Imported · unverified' : candidate.componentId && !candidate.model ? 'Starter draft - unverified' : candidate.mode === 'gemini' ? 'Gemini + Nemotron draft · unverified' : isChatMode(candidate.mode) ? 'NVIDIA draft · unverified' : 'Mock candidate'}</span>
           </li>)}</ul></section>}
         </aside>}
         <section className="studio-preview-pane" aria-label="Component preview and code">
@@ -160,7 +160,7 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
             ? <iframe title="Mock component preview" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={preview.content} />
             : example ? <><p className="example-disclaimer">Illustrative UI example — not generated or saved to this library.</p><iframe title={'Example preview: ' + example.name} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={example.source} /></>
               : !job ? <div className="library-empty-state"><span className="eyebrow">Current library</span><strong>No published components yet</strong><p>Select a saved draft to build and inspect its actual compiled output.</p></div> : null)}
-          {!example && !preview && <div hidden={view !== 'preview'}><StackPreview key={job?.id.toString() ?? 'empty'} adapter={adapter} connection={connection} jobId={job && isChatMode(job.mode) && job.state === 'draft_ready' && files.length ? job.id : undefined} savedRevision={editor.revision} unsaved={editor.unsaved} preview={previews.find(row => row.jobId === job?.id)} editable={editable && !selectedJobDeleted} active={view === 'preview'} /></div>}
+          {!example && !preview && <div hidden={view !== 'preview'}><StackPreview key={job?.id.toString() ?? 'empty'} adapter={adapter} connection={connection} jobId={job && isSourceDraft(job.mode) && job.state === 'draft_ready' && files.length ? job.id : undefined} savedRevision={editor.revision} unsaved={editor.unsaved} preview={previews.find(row => row.jobId === job?.id)} editable={editable && !selectedJobDeleted} active={view === 'preview'} /></div>}
           {view === 'source' && <>{files.length ? <><label>Candidate file<select aria-label="Candidate file" value={file?.path ?? ''} onChange={event => setSelectedFile(event.target.value)}>{files.map(item => <option key={item.path}>{item.path}</option>)}</select></label><p role="status" data-testid="draft-save-status">{editor.status}</p>
               <CodeEditor key={`${job?.id}:${file?.path}`} value={file?.content ?? ''} readOnly={!canEdit} onChange={value => file && editor.change(file.path, value)}
                 highlightUntil={job ? recentAgentResults[job.id.toString()] : undefined}
@@ -170,13 +170,13 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
               <p className="note">{canEdit ? 'Edits autosave as an unverified draft. Source, examples and documentation share this file set; build explicitly from Preview to execute a saved revision.' : 'Read-only draft. Illustrative mock fixtures cannot be edited.'}</p></>
             : example ? <><p className="example-disclaimer">Illustrative source — not generated or saved to this library.</p><pre data-testid="example-source">{example.source}</pre></> : <p>No candidate source files yet.</p>}</>}
           {view === 'documentation' && <><label>Documentation file<select aria-label="Documentation file" value={document?.path ?? ''} onChange={event => setSelectedFile(event.target.value)}>{documents.map(item => <option key={item.path}>{item.path}</option>)}</select></label><pre>{document?.content ?? (example ? 'This UI-only example has no project documentation.' : 'No candidate documentation yet.')}</pre></>}
-          {view === 'validation' && <p>{!job || !isChatMode(job.mode) ? 'No real validation has run. Build/test stages are simulated.' : 'No complete component validation or promotion has run. Any compilation result appears in Preview.'} No output is marked current or export-ready.</p>}
+          {view === 'validation' && <p>{!job || !isSourceDraft(job.mode) ? 'No real validation has run. Build/test stages are simulated.' : 'No complete component validation or promotion has run. Any compilation result appears in Preview.'} No output is marked current or export-ready.</p>}
         </section>
         <div className="chat-pane">
           <p className="chat-reference-context">{references.length
             ? `All ${references.length} saved project reference${references.length === 1 ? ' is' : 's are'} included automatically.`
             : 'No saved project references; any added later will be included automatically.'}</p>
-          <p className="note">{job && isChatMode(job.mode) && files.length ? `Chat context: selected draft: ${job.request}` : 'Chat context: project guidance and latest generated draft.'}</p>
+          <p className="note">{job && isSourceDraft(job.mode) && files.length ? `Chat context: selected draft: ${job.request}` : 'Chat context: project guidance and latest generated draft.'}</p>
           <ProjectChat key={component?.id.toString() ?? 'legacy'} component={component}
             instructionPanel={component && job ? <EditorInstructions key={`${component.id}:${job.id}`} componentId={component.id} sourceJobId={job.id} revision={editor.revision}
                 files={files} unsaved={editor.unsaved} saveError={editor.error} editable={!!canEdit} available={chatEnabled && !!adapter}

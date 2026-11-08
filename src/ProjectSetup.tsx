@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { DbConnection } from './module_bindings';
 import type { ProjectSummary } from './module_bindings/types';
-import type { Component, Guidance, ProjectReference, StarterTask } from './useWorkspace';
+import type { Component, Guidance, ImportRecord, ProjectReference, StarterTask } from './useWorkspace';
+import { ComponentImport } from './ComponentImport';
 import { Button } from './components/Button';
 import { Badge } from './components/Badge';
 import { ProjectReferences } from './ProjectReferences';
@@ -14,7 +15,7 @@ const steps: Array<[SetupStep, string]> = [['questionnaire', 'Questionnaire'], [
 const knownErrors = ['Answer the questionnaire, upload at least one document or import components before continuing.', 'Guidance changed. Review the latest saved version.',
   'Questionnaire answers are invalid. Reload the page and try again.', 'Project edit access is required.', 'Your session expired. Sign in again and retry.',
   'ComPlix chat is not configured. Contact the operator.', 'Choose at least one starter component.', 'Starter components can only be generated during project setup.',
-  'Starter components need a supported stack (React + TypeScript or Blazor). Finish setup without starters instead.'];
+  'Starter components need a supported stack (React + TypeScript or Blazor). Finish setup without starters instead.', 'already exists. Deselect that starter so imported work is not overwritten.'];
 function message(cause: unknown) {
   const text = cause instanceof Error ? cause.message : '';
   return knownErrors.find(item => text.includes(item)) ?? 'The change could not be confirmed. Check your connection and project access, then retry.';
@@ -23,13 +24,15 @@ function savedAnswers(guidance?: Guidance) {
   try { return parseQuestionnaire(guidance?.questionnaire ?? ''); } catch { return emptyQuestionnaire(); }
 }
 
-export function ProjectSetup({ project, step, go, openLibrary, guidance, references, tasks, components, chatEnabled, connection }: {
+export function ProjectSetup({ project, step, go, openLibrary, guidance, references, tasks, components, imports, chatEnabled, connection }: {
   project: ProjectSummary; step: SetupStep; go: (step: SetupStep) => void; openLibrary: () => void;
-  guidance?: Guidance; references: ProjectReference[]; tasks: StarterTask[]; components: Component[]; chatEnabled: boolean; connection: DbConnection;
+  guidance?: Guidance; references: ProjectReference[]; tasks: StarterTask[]; components: Component[]; imports: ImportRecord[]; chatEnabled: boolean; connection: DbConnection;
 }) {
   const editable = project.permission === 'editor';
   const answered = hasAnswers(savedAnswers(guidance));
-  const canContinue = answered || references.length > 0;
+  const imported = imports.length > 0;
+  // Mirrors the backend gate: questionnaire answers, a saved reference, or a completed import.
+  const canContinue = answered || references.length > 0 || imported;
   const generating = project.setupState === 'generating' || tasks.length > 0;
   // Starting generation locks the earlier steps; the progress page is the only place left to go.
   const current: SetupStep = generating && project.setupState !== 'setup' ? 'progress' : step === 'progress' && !generating ? 'components' : step;
@@ -49,13 +52,14 @@ export function ProjectSetup({ project, step, go, openLibrary, guidance, referen
         upload={(filename, purpose, bytes) => connection.reducers.uploadReference({ projectId: project.id, filename, purpose, bytes })}
         uploadPdf={(filename, purpose, bytes, text) => connection.reducers.uploadPdfReference({ projectId: project.id, filename, purpose, bytes, text })}
         remove={referenceId => connection.reducers.removeReference({ referenceId })} />
+      <ComponentImport project={project} references={references} components={components} imports={imports} connection={connection} />
       <div className="setup-actions">
         <Button type="button" variant="secondary" onClick={() => go('questionnaire')}>Back to questionnaire</Button>
-        {!canContinue && <p className="note" role="status">Answer the questionnaire or upload at least one document to continue.</p>}
-        <Button type="button" disabled={!canContinue} onClick={() => go('components')}>Continue to starter components</Button>
+        {!canContinue && <p className="note" role="status">Answer the questionnaire, upload at least one document or import components to continue.</p>}
+        <Button type="button" disabled={!canContinue} onClick={() => go('components')}>{imported ? 'Continue' : 'Continue to starter components'}</Button>
       </div>
     </>}
-    {current === 'components' && <ComponentsStep project={project} chatEnabled={chatEnabled} connection={connection} back={() => go('references')} started={() => go('progress')} finished={openLibrary} />}
+    {current === 'components' && <ComponentsStep project={project} imported={imported} componentNames={components.map(row => row.name)} chatEnabled={chatEnabled} connection={connection} back={() => go('references')} started={() => go('progress')} finished={openLibrary} />}
     {current === 'progress' && <ProgressStep project={project} tasks={tasks} components={components} connection={connection} openLibrary={openLibrary} />}
   </section>;
 }
@@ -127,10 +131,12 @@ function ChoiceField({ name, values, set }: { name: keyof typeof questionnaireCh
   </select></label>;
 }
 
-function ComponentsStep({ project, chatEnabled, connection, back, started, finished }: {
-  project: ProjectSummary; chatEnabled: boolean; connection: DbConnection; back: () => void; started: () => void; finished: () => void;
+function ComponentsStep({ project, imported, componentNames, chatEnabled, connection, back, started, finished }: {
+  project: ProjectSummary; imported: boolean; componentNames: string[]; chatEnabled: boolean; connection: DbConnection; back: () => void; started: () => void; finished: () => void;
 }) {
-  const [chosen, setChosen] = useState<string[]>(starterComponents.map(item => item.id));
+  // After an import, starters are optional extras: none preselected, and names already in the library are unavailable.
+  const taken = new Set(componentNames.map(name => name.toLowerCase()));
+  const [chosen, setChosen] = useState<string[]>(imported ? [] : starterComponents.map(item => item.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const adapter = selectStackAdapter(project);
@@ -140,21 +146,24 @@ function ComponentsStep({ project, chatEnabled, connection, back, started, finis
     setBusy(true); setError('');
     try { await action(); done(); } catch (cause) { setError(message(cause)); } finally { setBusy(false); }
   }
-  return <section className="panel setup-panel"><h2>Choose your starter components</h2>
+  const finish = () => void act(() => connection.reducers.finishProjectSetup({ projectId: project.id }), finished);
+  return <section className="panel setup-panel"><h2>{imported ? 'Your imported library is ready' : 'Choose your starter components'}</h2>
+    {imported && <p className="note">Open the imported library now, or optionally add starter components alongside it.</p>}
     <p className="note">ComPlix generates each one in your project's stack ({adapter?.label ?? 'unsupported stack'}) using your questionnaire and documents. Each takes about a minute; you can tweak them or add more in the component workspace afterwards.</p>
     <fieldset disabled={busy || !!blocked} className="starter-options">
       <legend>Starter components</legend>
       {starterComponents.map(item => <label key={item.id} className="starter-option">
-        <input type="checkbox" checked={chosen.includes(item.id)} onChange={event => setChosen(old => event.target.checked ? [...old, item.id] : old.filter(id => id !== item.id))} />
-        <span><strong>{item.label}</strong><span className="note">{item.description}</span></span>
+        <input type="checkbox" disabled={taken.has(item.name.toLowerCase())} checked={chosen.includes(item.id)} onChange={event => setChosen(old => event.target.checked ? [...old, item.id] : old.filter(id => id !== item.id))} />
+        <span><strong>{item.label}</strong><span className="note">{taken.has(item.name.toLowerCase()) ? 'Already in your imported library.' : item.description}</span></span>
       </label>)}
     </fieldset>
     {blocked && <p role="status" className="note">{blocked}</p>}
     {error && <p role="alert" className="error">{error}</p>}
     <div className="setup-actions">
       <Button type="button" variant="secondary" disabled={busy} onClick={back}>Back to documents</Button>
-      <Button type="button" variant="secondary" disabled={busy} onClick={() => void act(() => connection.reducers.finishProjectSetup({ projectId: project.id }), finished)}>Finish without starter components</Button>
-      <Button type="button" disabled={busy || !!blocked || !chosen.length} onClick={() => void act(() => connection.reducers.startStarterLibrary({ projectId: project.id, starterIds: chosen }), started)}>
+      {imported && <Button type="button" disabled={busy} onClick={finish}>Open imported library</Button>}
+      {!imported && <Button type="button" variant="secondary" disabled={busy} onClick={finish}>Finish without starter components</Button>}
+      <Button type="button" variant={imported ? 'secondary' : undefined} disabled={busy || !!blocked || !chosen.length} onClick={() => void act(() => connection.reducers.startStarterLibrary({ projectId: project.id, starterIds: chosen }), started)}>
         {busy ? 'Starting…' : `Generate ${chosen.length} starter component${chosen.length === 1 ? '' : 's'}`}</Button>
     </div>
   </section>;

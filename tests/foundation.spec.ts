@@ -2191,3 +2191,52 @@ test('component import rolls back on conflicts, keeps staging for retry and reje
   await owner.conn.reducers.cancelImport({ projectId, requestId: tampered });
   await expect(owner.conn.reducers.finalizeImport({ projectId, requestId: tampered })).rejects.toThrow('No uploaded import data');
 });
+
+test('browser intake reviews a ComPlix ZIP, blocks conflicts, imports it and opens the library without starters', async ({ browser }) => {
+  test.setTimeout(120000);
+  const token = await makeToken('import-browser@example.test', 'Import Browser');
+  const owner = await connect(token);
+  await owner.conn.reducers.createSetupProject({ name: 'Browser import', organizationId: 0n, ...reactStack });
+  const projectId = [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Browser import')!.id;
+  // An intake upload whose name collides with the archive's design.md must block confirmation.
+  await owner.conn.reducers.uploadReference({ projectId, filename: 'design.md', purpose: 'design', bytes: new TextEncoder().encode('Intake design notes') });
+  const { createLibraryZip } = await import('../shared/libraryExport');
+  const archive = await createLibraryZip({ exportedAt: '2026-11-08T12:00:00.000Z', project: { id: '1', name: 'Old lib', revision: '1', ...reactStack },
+    guidance: [{ label: 'colors', content: 'Archived sage.' }], warnings: [], references: [], components: [
+      { id: '2', name: 'ImportedButton', category: 'common', rootPath: 'Common/ImportedButton', jobId: '5', revision: '1', model: 'x', origin: 'generated', files: [
+        { path: 'Common/ImportedButton/ImportedButton.tsx', content: 'export function ImportedButton() { return <button>Imported marker</button>; }\n' }] },
+      { id: '3', name: 'Button', category: 'common', rootPath: 'Common/Button', jobId: '6', revision: '0', model: 'x', origin: 'generated', files: [
+        { path: 'Common/Button/Button.tsx', content: 'export function Button() { return <button />; }\n' }] },
+    ] });
+  const context = await browser.newContext();
+  await seedBrowser(context, token);
+  const page = await context.newPage();
+  const browserErrors: string[] = [];
+  page.on('pageerror', error => browserErrors.push(error.name + ': ' + error.message));
+  await page.goto(`/projects/${projectId}/setup/references`);
+  const panel = page.getByRole('region', { name: 'Import existing components', exact: true });
+  await panel.getByLabel('Component library ZIP').setInputFiles({ name: 'old-library.zip', mimeType: 'application/zip', buffer: Buffer.from(archive.bytes) });
+  await expect(panel.getByTestId('import-review')).toContainText('Recognized a ComPlix library export in old-library.zip');
+  await expect(panel.getByRole('listitem', { name: 'Imported component ImportedButton', exact: true })).toBeVisible();
+  await expect(panel.getByRole('alert')).toContainText('"design.md" is used 2 times');
+  await expect(panel.getByRole('button', { name: 'Import 2 components', exact: true })).toBeDisabled();
+  // Resolving the conflict (removing the intake upload) re-enables confirmation without re-choosing the ZIP.
+  await owner.conn.reducers.removeReference({ referenceId: [...owner.conn.db.visibleReferences.iter()].find(row => row.projectId === projectId)!.id });
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Import 2 components', exact: true }).click();
+  await expect(panel.getByTestId('import-status')).toHaveText('Imported 2 components and 1 reference. Imported code is unverified until you preview it.');
+  // Imports alone satisfy setup; starters become optional, unselected, and imported names are unavailable.
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your imported library is ready', exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /^Button/ })).toBeDisabled();
+  await expect(page.getByRole('checkbox', { name: /KPI card/ })).not.toBeChecked();
+  await page.getByRole('button', { name: 'Open imported library', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/\d+\/components$/);
+  await expect(page.getByText('Common/ImportedButton', { exact: true })).toBeVisible();
+  expect([...owner.conn.db.visibleStarterTasks.iter()].filter(row => row.projectId === projectId)).toHaveLength(0);
+  await page.getByRole('button', { name: 'ImportedButton', exact: true }).click();
+  await expect(page.getByText('Imported · unverified').first()).toBeVisible();
+  await expect(page.getByText('Imported marker').first()).toBeVisible();
+  expect(browserErrors, 'Import intake has no browser runtime errors').toEqual([]);
+  await context.close();
+});
