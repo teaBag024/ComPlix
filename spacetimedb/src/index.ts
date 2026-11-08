@@ -751,6 +751,8 @@ export const runEditorInstruction = db.procedure({ instructionId: t.u64(), expec
     if (job.snapshot.includes(geminiKey)) throw new SenderError('Remove credentials from the request or project context.');
     tx.db.editorInstruction.id.update({ ...record, state: 'submitted', jobId: job.id });
     tx.db.generationJob.id.update({ ...job, state: 'generating' });
+    tx.db.componentChatMessage.insert({ id: 0n, componentId: record.componentId, projectId: target.id, senderIdentity: tx.sender,
+      role: 'system', content: `I see your @complix request in ${item.path}:${item.line}: "${item.text}". I'm reviewing it now; Nemotron will handle any code changes.`, jobId: job.id, createdAt: tx.timestamp });
     return { id: job.id, snapshot: job.snapshot, geminiKey, geminiModel, nvidiaKey, nvidiaModel };
   }); } catch (cause) {
     // Persist admission failures so remounting the editor does not implicitly retry them.

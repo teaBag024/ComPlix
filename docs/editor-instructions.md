@@ -22,7 +22,7 @@ In Blazor markup:
 
 Keep the instruction complete and specific before pausing. A partial TSX file or unterminated comment does not execute. Ordinary comments, string literals and documentation are inactive. Initial Razor support covers markup comments before executable Razor transitions, including comments before a trailing `@code` block; comments in C# blocks/expressions are unsupported.
 
-The editor lists detected instructions, their file locations and status. Gemini receives the saved component, guidance, Common contracts, conversation and all project references through the existing pipeline. A result remains an unverified candidate; the current preview flow can build it separately. Compilation is not complete validation or promotion.
+The editor lists detected instructions, their file locations and status. Once the backend accepts an instruction, component chat immediately acknowledges its text and location: ?I see your @complix request??. This is a ComPlix receipt acknowledgment before provider calls, not a claim that Nemotron has already responded. It is recorded once per accepted job, including across duplicate submissions. Gemini receives the saved component, guidance, Common contracts, conversation and all project references through the existing pipeline. A result remains an unverified candidate; the current preview flow can build it separately. Compilation is not complete validation or promotion.
 
 Saved or unsaved human changes prevent automatic replacement by an outdated result. Stop generation prevents further authorized work and discards late results. A provider call already underway can still finish and incur usage; the saved code and last working preview are preserved.
 

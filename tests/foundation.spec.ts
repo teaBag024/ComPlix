@@ -1829,6 +1829,10 @@ test('editor instructions verify saved comments, deduplicate, isolate access and
   expect(result.state).toBe('draft_ready');
   expect(JSON.parse(result.snapshot).editorInstruction).toMatchObject({ path: instruction.path, text: 'Make this green' });
   expect(JSON.parse(result.snapshot).origin).toBe('editor_comment');
+  const acknowledgments = [...owner.conn.db.visibleComponentChat.iter()].filter(row => row.jobId === result.id && row.role === 'system');
+  expect(acknowledgments).toHaveLength(1);
+  expect(acknowledgments[0].content).toContain('I see your @complix request');
+  expect(acknowledgments[0].content).toContain('Make this green');
   const count = [...owner.conn.db.visibleGenerationJobs.iter()].length;
   await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 1n, files: files('Make this green').map(file => ({ ...file, content: '\n' + file.content })) });
   expect(records()).toHaveLength(1);
@@ -1913,6 +1917,7 @@ test('editor Stop generation preserves code and prevents late instruction accept
   const content = files('Slow instruction fixture').find(file => file.path === sourcePath)!.content;
   await editor.fill(content);
   const region = page.getByRole('region', { name: 'Editor instructions', exact: true });
+  await expect(page.locator('.chat-bubble').filter({ hasText: 'I see your @complix request' })).toContainText('Slow instruction fixture');
   await region.getByRole('button', { name: 'Stop generation', exact: true }).click();
   await expect.poll(() => [...owner.conn.db.visibleGenerationJobs.iter()].find(row => JSON.parse(row.snapshot).origin === 'editor_comment')?.state).toBe('cancelled');
   await page.waitForTimeout(3500);

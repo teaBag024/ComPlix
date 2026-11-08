@@ -466,3 +466,8 @@ Owner clarified editor-comment instructions and requested revising realtime-agen
 ## Automatic editor instructions - November 8, 2026
 
 Owner authorized implementation and explicitly chose automatic execution after typing stops. Prototype defaults: JSX `@complix` comments in TSX and Razor markup `@* @complix ... *@` comments; two idle seconds after successful autosave while Code is open; retain comments; explicit enable/rerun for inherited or previously processed markers. These syntax/timing/retention details are implementation defaults, not separate owner decisions. Persist instruction-to-job identity and admission blocks, reuse existing Gemini/Nemotron budgets/context/rate limits and preserve newer human drafts. Logical Stop rejects further calls and late results without aborting in-flight HTTP or destroying the working preview. Automatic repair and verified promotion remain future scope.
+
+
+## Editor instruction receipt acknowledgment - November 8, 2026
+
+Owner requested a visible acknowledgment when an @complix instruction is detected. On successful backend acceptance, persist one system message in component chat quoting the instruction and file location before provider calls. The message confirms receipt by ComPlix and explains that Nemotron handles code changes; it is not a fabricated model response and adds no provider call. Rejected requests produce no receipt acknowledgment.

@@ -654,3 +654,8 @@ Later the same day (owner-approved):
   - Each produced a source file, README.md and examples/Preview.tsx that apply the questionnaire values.
   - Imports stayed within the React preview environment (React, lucide-react, CVA, clsx, tailwind-merge, Radix Slot).
 - **Not run:** E2B compile/preview of the generated starters, so their build success is unverified.
+
+
+## Immediate editor-instruction acknowledgment - November 8, 2026
+
+On feat/acknowledge-editor-instructions, added a component-chat receipt message atomically with instruction acceptance, before Gemini/Nemotron execution. It includes the source location and instruction text, appears through existing subscriptions and cannot duplicate on repeated claims. Updated usage notes. Two focused backend/browser tests passed: idempotent acknowledgment and visibility before a deliberately slow provider response completes, followed by safe cancellation (frontend 54273/backend 54200/database complix-instruction-ack). Frontend/module typechecks, backend compilation and git diff --check passed. No schema/API changes, live provider request, local publication, commit or push. Backend must be republished for the running app to show this new acknowledgment.
