@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
 import { ensureLocalKeys } from './local-keys.mjs';
 import path from 'node:path';
 
@@ -21,6 +22,14 @@ const [executable, args] = commands[action];
 if (!existsSync(executable)) throw new Error('Local SpacetimeDB tools missing. See README.md setup.');
 const env = { ...process.env };
 if (action === 'publish') {
+  // Deliberately outside Vite's .env loading convention: backend credentials only.
+  const secretsPath = path.join(root, '.local', 'backend.env');
+  if (existsSync(secretsPath)) {
+    const values = parseEnv(readFileSync(secretsPath, 'utf8'));
+    for (const name of ['NVIDIA_API_KEY', 'NVIDIA_MODEL', 'GEMINI_API_KEY', 'GEMINI_MODEL']) if (values[name] && env[name] === undefined) env[name] = values[name];
+  }
+  env.NVIDIA_ENABLED ??= 'true';
+  env.GENERATION_MODE ??= 'mock';
   env.AUTH_ISSUER ??= 'https://auth.spacetimedb.com/oidc';
   env.AUTH_CLIENT_ID ??= 'client_034te16H37cuA4goFM0pev';
 }

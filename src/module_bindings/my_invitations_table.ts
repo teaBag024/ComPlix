@@ -13,7 +13,9 @@ import {
 export default __t.row({
   id: __t.u64(),
   organizationId: __t.u64().name("organization_id"),
+  projectId: __t.u64().name("project_id"),
   organizationName: __t.string().name("organization_name"),
+  projectName: __t.string().name("project_name"),
   email: __t.string(),
   role: __t.string(),
   projectRole: __t.string().name("project_role"),

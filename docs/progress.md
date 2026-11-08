@@ -235,7 +235,7 @@ Remaining limitations: generation/compatibility resolution, actual generated-cod
 
 Next recommended milestone: agree the minimal Common inventory, provider/key lifecycle and isolated build/preview approach, then implement versioned generation adapters for both required output profiles without restricting requested project technologies.
 
-## Workspace tabs � November 7, 2026
+## Workspace tabs — November 7, 2026
 
 Implemented on feat/workspace-tabs, preserving existing uncommitted work:
 - Six task-focused tabs: Projects, Design guidance, Technologies, Sharing, Organization, Invitations.
@@ -248,3 +248,192 @@ Implemented on feat/workspace-tabs, preserving existing uncommitted work:
 Validation: strict frontend/module typechecks and production build passed. Vite emitted Radix use-client directive warnings. npm reported the host Node 24.21.0 is below the project's declared minimum 24.22.1; dependencies installed successfully with zero reported audit vulnerabilities. Initial test run reported all 10 cases passing but stalled in process cleanup; terminated only identified test processes and reran outside the sandbox. Final rerun result follows below. No commit, push or publication.
 
 Final validation: npm.cmd test passed all 10 tests in 47.4 seconds, exit 0, including the new keyboard, hidden-panel, unsaved-draft and mobile-width assertions. A preceding rerun was interrupted by a frontend formatting reload during the connection-retry check; the final source-stable run passed that check. git diff --check passed (line-ending notices only). Formal accessibility audit and visual browser matrix were not performed.
+
+## Workspace ownership/shared-space clarity - November 7, 2026
+
+Implemented on feat/workspace-tabs, preserving existing work: ownership-first overview, owned versus shared project cards, per-project requested stack/private/space labels, selected-project context across tabs, and organization space cards listing accessible projects with direct navigation. Empty states explain that zero organizations is valid. Space counts explicitly cover only authorized projects; no backend/access changes or new dependencies.
+
+Validation: frontend/module typechecks and production build passed, with the existing Radix use-client directive warnings. npm.cmd test: 11 passed in 47.9 seconds, exit 0. New browser acceptance uses separate owner/teammate identities, two organizations, two owned projects with different stacks and a viewer-shared project. It verifies ownership groups, stack labels, private/space status, multiple projects per space, private-project omission from space lists and direct project navigation. Existing tab keyboard/draft behavior, authentication, sharing and migration checks also pass. Reviewed fixture-only desktop project/space screenshots and a 390px mobile screenshot; mobile width assertion confirms no horizontal overflow. Formal accessibility audit/browser matrix remains unperformed. Screenshots stay in ignored .local and contain synthetic accounts only.
+
+No backend publication, dependency installation, commit or push. Reload the running local frontend to try the revised layout.
+
+## Reference intake preparation - November 7, 2026 (incomplete)
+
+Preserved existing workspace changes on feat/workspace-tabs. Prepared shared filename/extension/UTF-8/readable-text/byte-limit validation rules and a storage-independent ProjectReferences upload/list/purpose/plain-text preview/removal component. The component is not mounted or connected to persistence; do not call uploads implemented.
+
+A focused question is pending: inline private SpacetimeDB file storage (recommended, 128 KiB/file and 20 references/project) versus a separate local file service. This materially affects architecture, so persistence/schema work waits for that choice. Limits remain proposed until answered. Original bytes, permissions, durability, subscriptions and project isolation still need integration and end-to-end tests.
+
+Frontend/module typechecks and production build passed, with existing Radix warnings. Validation helper tests exercised Unicode, filenames/path rejection, unsupported files, binary/control characters, malformed UTF-8, purpose validation and exact byte limits. Initial sandbox test run reported two passing cases but stalled in cleanup; rerun outside sandbox is recorded next. No dependency installation, backend publication, commit or push for this preparation.
+
+Validation rerun completed: 2 passed in 7.9 seconds, exit 0. git diff --check passed. Reference intake remains incomplete pending the storage decision and persistence/permissions integration.
+
+## Project reference intake completed - November 7, 2026
+
+Owner explicitly approved small-file inline SpacetimeDB storage: 128 KiB/file, 20 references/project. This supersedes the pending preparation entry above. Implemented on feat/workspace-tabs while preserving existing workspace changes:
+- New private project_reference table, editor-only upload/removal reducers and caller-scoped visible_references view. Original bytes, decoded UTF-8 text, filename, purpose, uploader and timestamp are saved atomically. Duplicate filenames (case-insensitive) are rejected per project; server validation enforces formats/encoding/size/count.
+- References tab with purpose/file selection, reading/uploading/ready/error/empty feedback, plain-text preview, read-only viewers and explicit removal confirmation. Existing guidance/library content is unaffected. No uploaded code or HTML is executed/rendered.
+- Shared validation rules, generated bindings, subscription lifecycle integration, documentation and setup/test commands. No new dependencies or separate service.
+
+Evidence actually run:
+- Backend build/binding generation and frontend/module strict typechecks plus production build passed. Existing Radix use-client directive warnings remain.
+- Full regression suite: 15 passed in 56.2 seconds, exit 0. Includes all earlier auth/sharing/migration/UI checks and new helper/server/browser reference checks.
+- Focused final reference suite: 2 passed in 22.4 seconds, exit 0, after adding exact 128 KiB upload and UI cross-project switching assertions. Tests verify original BOM/CRLF/Unicode bytes and text, malformed UTF-8/binary/control/path/extension/size/purpose rejection, duplicate preservation, concurrent 20-reference quota, delete freeing quota, viewer/outsider write denial, private backing-table denial/scoped read isolation, live reference updates/revocation, original/text persistence after server restart, viewer UI, reload, plain HTML/script text without execution, failure messages and removal cancel/confirm.
+- Reviewed a fixture-only References screenshot under ignored .local. Preview text remains literal. Large previews are height-bounded and scrollable.
+- Local publication to 127.0.0.1:3000/complix-local succeeded with --delete-data=never: only the project_reference table/view and new reducers added; existing data/schema preserved. No Maincloud update, paid resource, commit or push.
+
+Limits: no PDF/image/archive/URL processing, AI interpretation/generation, external artifact storage or reference undo. Ready denotes synchronous readable-text decoding, not semantic extraction. Current subscription loads original/text for all authorized projects; per-project limits do not replace future pagination/lazy loading. Real-account upload acceptance and a formal accessibility/browser matrix remain manual; tests use signed/seeded local identities.
+
+Handoff: reload http://127.0.0.1:5173, select a project and open References. Setup/start/test commands are in README. Next recommended milestone is bounded Nemotron generation using project technologies/guidance/references, after settling provider credentials and isolated validation/preview execution.
+
+## Nemotron preparation and sandbox plan - November 7, 2026
+
+Owner reported a successful real-account text reference upload. Owner then requested Nemotron work and selected complete build/preview sandbox planning before implementing the proposed local draft-only service.
+
+Prepared independent bounded NVIDIA transport/context helpers; mocked checks passed: 3 tests in 2.9 seconds, exit 0. Checks cover request shape/credential placement, sanitized HTTP/network errors, incomplete/oversized/credential-bearing responses, safe usage, omission of reasoning, single-project context isolation, identity-metadata omission and context-size limits. No NVIDIA call, real key, service endpoint, job schema or generation UI was connected.
+
+Created docs/generation-sandbox-plan.md with trust boundaries, full lifecycle, dependency/download policy, offline build containers, framework adapters, separate-origin browser preview authorization/CSP, artifacts/crash reconciliation, resources, acceptance/security probes and phased implementation. Proposals remain explicitly unapproved. Docker Desktop/Linux engine verified outside sandbox; host dotnet absent, but proposed container toolchain avoids a system install. No system changes, images pulled, containers launched, generated code executed, provider credits spent, backend publication, commit or push. Next step is review/adopt the sandbox approach and implement fixture-only isolation proof.
+
+## Library and generation workflow with mocks - November 7, 2026
+
+Owner authorized implementation and selected mocked providers, account setup later. Completed the first mock integration slice on feat/workspace-tabs, preserving existing work and sample files:
+- Private generation jobs, scoped history/settings views, editor-only creation/advance/cancel/delete and immutable saved request/context. One active job per project, request replay protection, stale-context failure, 64 KiB context cap and 20-history limit. Current library pointers/promotion are deliberately absent; mock results are never validated/current.
+- Library tab with request and selected references, visible simulated stages, success/generation/build-failure fixtures, resume/cancel, history, source/documentation/validation inspection and an interactive trusted HTML fixture preview. No arbitrary framework restriction in request intake. Existing working project content and earlier candidates are preserved on failure.
+- NVIDIA transport/context helpers and an injected E2B-controller adapter with mocked tests. E2B contract requests private/offline execution, rejects candidate path escapes and cleans up failed builds; no real E2B SDK installed, provider calls made or generated code executed. Real E2B/Spacetime procedure orchestration and protected preview routing are not implemented.
+- Local publisher explicitly enables mock mode; disabled/missing configuration rejects generation. No separate application server, key persistence or credential form. Browser-driven stages persist for manual resume after interruption; this is not a durable background worker.
+- Plan/decisions/README revised to distinguish approved mock scope from earlier Docker/sandbox recommendations and future live work.
+
+Validation actually run:
+- Backend compilation and binding generation passed; final frontend/module typechecks and production build passed (existing Radix use-client warnings).
+- Full source-stable regression: 22 passed in 43.7 seconds, exit 0. This included earlier auth/migration/reference/sharing tests, NVIDIA/E2B mocked contracts, queue/snapshot/idempotency/staleness/cancel/access guards, and Library browser flow.
+- Additional final focused checks: 3 passed in 21.6 seconds, exit 0. Added actual server-restart preservation of job artifacts/history and rejection under disabled generation configuration. UI tests also exercise fixture interaction, failure preserving earlier results and parent-DOM/network isolation inside the opaque-origin CSP iframe. These prove the fixture boundary, not security of a live hosted sandbox.
+- Local data-preserving publication to 127.0.0.1:3000/complix-local succeeded, adding generation_job/views/reducers. No existing tables deleted. git diff --check passed with line-ending notices only. Reviewed a synthetic-account Library screenshot in ignored .local.
+
+Handoff: reload http://127.0.0.1:5173, choose a project, open Library, Queue mock generation then Run mock pipeline. Select Source/Documentation/Validation to inspect the fixture. No API key/account is required and no credits are spent. Setup and disable-mode commands are in README.
+
+Remaining: real Nemotron generation, E2B provisioning/toolchains/readiness and authorization gateway, secure provider credentials, background orchestration/worker authority, actual builds/tests, artifact revision/promotion/undo/export and real-account acceptance. No current framework compatibility claims follow from the mock preview. Job context is retained until terminal job history is explicitly deleted; removing an original reference does not erase past snapshots. No live external deployment, system install, paid service, commit or push performed. Next recommended milestone is provider account configuration plus a narrowly budgeted live sandbox capability test, followed by authenticated orchestration and protected actual previews.
+
+## Workspace layout update — November 7, 2026
+
+Implemented the owner-confirmed workspace arrangement without adding backend capabilities:
+- Sign-in lands on the project card grid. My projects and Shared projects are separate views; shared projects can be filtered by organization. Opening a project enters its Components workspace.
+- The project navigation is a compact side rail on project pages. Components has a toggleable available-components list, a preview/source/documentation/validation area, and a chat panel. Current mock candidates remain clearly labeled as unverified. Chat is a non-submitting placeholder; no code changes are claimed.
+- Project settings summarize requested technologies as read-only values and list saved references with a link to the existing reference-management view. Project renaming/sharing and existing project navigation remain available.
+- Added docs/design-guide.md and recorded the owner-confirmed layout in decisions.md and the system plan. Existing unrelated dirty files and work were preserved.
+
+Validation actually run:
+- `npm run typecheck` passed; `npm run build` passed. Vite emitted existing Radix "use client" bundling notices.
+- All 16 non-NVIDIA tests in `tests/foundation.spec.ts` passed, including project switching, ownership/sharing, settings read-only behavior, responsive overflow, references, and the mock library workflow. The separate disabled-generation settings test passed when run alone and in the final suite.
+- The complete foundation suite did not fully pass: an existing NVIDIA procedure authorization test allowed a viewer call that was expected to reject; the following NVIDIA UI test was skipped. No generation backend changes were made for this layout task.
+- `git diff --check` passed (Git emitted existing CRLF-to-LF notices). No commit, push or deployment performed.
+
+Remaining: chat-to-generation integration, actual React/Blazor builds and previews, component promotion and live AI behavior are not implemented by this layout change. Refer to design-guide.md for the intended UI boundaries.
+
+
+## NVIDIA key entry and draft procedure - November 7, 2026
+
+Implemented masked per-request key/model fields in Components, subscription-driven NVIDIA job states, authorized immutable context capture, direct SpacetimeDB HTTP procedure, bounded manifest parsing and safe failures. Keys clear on submission and are not written by the app to tables/browser storage/logs. Draft files persist and are inspectable as source; generated code has no executable preview. Existing mock workflow and unrelated workspace layout changes were preserved.
+
+Validation actually run:
+- Frontend and module typechecks plus production build passed (existing Radix directive notices).
+- Full regression: 26 passed in 50.2 seconds, exit 0. Includes procedure viewer/outsider denial, authorized draft storage, replay handling, sanitized 401 errors, absence of synthetic keys from authorized rows/server logs/browser storage, masked input clearing, subscription rendering/reload and no generated iframe; parser path/duplicate/size/truncation/escaped-secret rejection; prior auth/projects/references/mock/E2B contracts.
+- The earlier apparent viewer authorization failure was a test matcher issue: procedure errors reject with strings rather than Error instances. String-aware assertions pass. A separate HTTP fixture attempt exposed the server's intentional loopback restriction. Final integration tests use an explicitly instrumented ignored module copy with mocked transport; production module has no fixture switch. No production NVIDIA transport or paid response is claimed tested.
+- Production module publication to local 127.0.0.1:3000/complix-local passed with --delete-data=never. Model column appended with default, views replaced for new fields; no stored tables deleted. No Maincloud publication or provider quota used.
+
+Owner acceptance remaining: enter a key in Components > Generation provider > NVIDIA Nemotron and submit a small Common Button request. Verify your account/model response; failures display sanitized diagnostics. E2B builds/previews, live generated-code validation, persistent credentials, worker recovery and promotion remain future work. Updated README contains exact local start/publish/test commands. No dependencies installed, commit or push performed.
+
+Final review: guarded the empty-job Validation view; git diff --check passed with existing line-ending notices. The local backend was already running; a duplicate startup correctly refused its data lock. Frontend port 5173 is in use, so no existing process was stopped.
+
+## Workspace navigation follow-up — November 7, 2026
+
+Owner feedback explicitly rejected the previous tabbed layout. Workspace navigation now uses distinct paths for the project grid, components, settings, guidance, references, sharing, organizations, and invitations, and renders only the current page. Browser tests cover page navigation and history. Final validation: `npm run build` passed, the three focused Playwright tests for page routing, history, and component navigation passed, and `git diff --check` passed. A type mismatch encountered during earlier validation was resolved by concurrent generation-UI updates; provider behavior was not changed for this layout correction.
+
+## Frontend visual guide implementation — November 7, 2026
+
+Applied the owner-provided [frontend-design-guide.html](./frontend-design-guide.html): added semantic sage/forest-green light and forest-slate dark tokens, a persisted theme toggle, compact horizontal top-level/project navigation, `/projects/:id/components` as the canonical workspace path (with old project-root paths redirected), grouped read-only technology blocks, a saved-reference summary, and explicit Common/Compositions placeholders alongside clearly separate unverified candidates. Updated workspace documentation to identify the HTML guide as the visual authority.
+
+Validation: `npm run build` passed. The full Playwright suite passed (28 tests). Focused integration coverage passed for project navigation and sharing, private project switching, light/dark theme persistence, grouped settings, responsive workspace layout, and reference management. `git diff --check` passed.
+
+
+## Built-in chat correction - November 7, 2026
+
+Owner clarified that ComPlix supplies chat and users never enter AI keys. Replaced the temporary user-key/provider/model form with connected project chat. Operator-only NVIDIA_API_KEY/NVIDIA_MODEL settings now come from protected SpacetimeDB environment configuration; the local publish helper reads ignored .local/backend.env. A blank operator template was created without reading or requesting a real credential. The generated client procedure signature contains no key/model parameters. AGENTS, README, system plan, decisions and sandbox plan record the correction; earlier key-entry work remains superseded history.
+
+Chat saves member messages and sanitized replies in private authorized job records, supports discussion without files, carries bounded recent conversation/latest draft context, and displays optional code as escaped unverified source. Authorized collaborators receive shared updates; viewer/outsider sends are rejected. Private per-identity usage counters bound new requests to five/minute independently of deletable history. Mock tools remain under Developer mock workflow. No actual builds, generated executable previews, promotion or background worker are claimed.
+
+Validation so far: module compilation/binding generation and frontend/module typechecks plus production build passed. Four focused browser/procedure checks passed in 26.4 seconds, covering existing mock behavior, operator credentials, permissions, conversational context, reloads and missing configuration. Local publication to complix-local passed with --delete-data=never, adding only a private usage table and updating the procedure; existing project/history data preserved. No Maincloud publication, real provider call, dependency install, commit or push.
+
+Regression work exposed existing navigation assertions that still expected reload to return to the grid, or looked for personally owned guidance projects under Shared projects. Updated those tests to exercise the current project URLs/ownership views. Another active test process occupied the default frontend/backend ports; added optional test-only port/database overrides and reran on separate ports without stopping that process. README includes isolated-run commands.
+
+Owner setup remaining: add the operator key privately to .local/backend.env and run npm.cmd run backend:publish, then reload the local app. Users need no provider setup. Live NVIDIA transport/account/model acceptance remains unverified; E2B and actual generated-code build/preview validation remain the next integration boundary.
+
+Final regression: 28 passed in 1.1 minutes, exit 0, on isolated frontend 52373/backend 52300 and database complix-chat-final. All original auth/project/reference/guidance/migration checks passed alongside connected chat, discussion-only replies, persisted context, operator-key isolation, missing-config UI, access denial, safe provider failures, replay handling and rate-limit persistence after history deletion. Providers remained mocked. git diff --check passed with existing line-ending notices.
+
+Operator configuration follow-up: owner supplied the key in the ignored backend file. Local data-preserving publication succeeded and supplied NVIDIA_API_KEY without displaying its value. No schema/data changes or NVIDIA calls. CLI readiness-view query was rejected by application admission (CLI identity is not a verified app session); signed-in browser readiness and live provider acceptance remain to be confirmed.
+
+## Frontend guide fidelity follow-up — November 7, 2026
+
+Adjusted the rendered project and component pages against the owner-provided HTML mockups:
+- Project cards now keep the guide's three-column desktop grid instead of stretching a lone result across the page. The always-visible creation form is now opened from the Create project action, leaving the project cards in focus.
+- Removed extra project-page headings from the Components route; its component list, inspection surface and chat are now the first content below project navigation. Added the guide's Button, Input, LoginForm, and FilterPanel as clearly labeled, non-persistent UI examples with source and sandboxed preview. Mock-generation controls remain available in a collapsed secondary section; examples are not presented as saved or published work.
+- Removed sticky header behavior to match the guide's page layout and avoid full-page screenshot overlap. Responsive project cards and workspace columns remain covered.
+
+Validation: `npm run build` passed. The full Playwright suite passed: 31 tests. The workspace browser test checks desktop/tablet/mobile card columns, component examples, preview/source controls, component-list toggle, and narrow-screen overflow. `git diff --check` passed.
+
+## Create-action dialogs — November 7, 2026
+
+Moved project, organization, and invitation creation into accessible native modal dialogs. Dialogs support Escape, backdrop and explicit close/cancel actions; save failures remain visible in the open dialog, and successful submissions close it. Existing authorization and submission logic are unchanged. Updated browser coverage for dialog opening, Escape dismissal, and successful creation flows.
+
+Validation: `npm run build` passed. The full Playwright suite passed: 31 tests, including browser coverage for project, organization, and invitation creation dialogs plus Escape dismissal. `git diff --check` passed.
+
+
+## Slow/stuck chat recovery - November 7, 2026
+
+Owner reported Thinking at 374 seconds. Added private durable 90-second job deadlines and authorized stale-job cleanup during reconnect/new work so interrupted requests cannot remain active indefinitely while the server is running. Preserved saved projects/candidates and ignored late results. Added elapsed wait text, accessible Cancel reply, overdue guidance, client confirmation timeout and guards against cancelled old calls altering new sending state. Disabled extra reasoning for interactive requests; retained full-response mode and existing limits. Root cause of the specific live interruption and actual provider latency remain unverified. No additional live NVIDIA call was made.
+
+Validation: backend compilation/binding generation and final frontend/module typechecks/production build passed. Five focused integration/browser tests passed in 34.1 seconds with mocked transport and synthetic keys, covering operator-key access, persisted chat, missing configuration, elapsed feedback/cancel/retry, and actual scheduled expiry with all clients disconnected. Existing UI changes were preserved; corrected a missing parenthesis encountered during concurrent frontend edits. Used isolated local ports 52573/52500 to avoid other test processes. Full regression was not repeated for this increment.
+
+## Organization workspaces and project invitations — November 7, 2026
+
+Implemented on the existing `feat/stack-adapters` worktree without discarding its unrelated changes. `/organizations` remains a card directory; organization cards open URL-backed Overview, Projects, Members & invitations, and Settings pages under `/organizations/:id`. Organization Projects only lists caller-visible projects and opens the standard project route. Owners/admins can rename organizations; member management retains its existing owner/admin boundaries.
+
+Added a project-sharing invitation modal with project-only, organization-only, and organization-plus-project modes where the inviter has organization invitation authority. Project-only invitations match verified email and create only explicit project grants; they do not add membership. Grant views and management now include named project-only collaborators. Leaving/removing organization members continues to remove their grants from its projects and invalidates associated project-only invitations when the project is detached/reassigned. Online collaborator activity remains future work.
+
+Validation: binding generation and strict frontend/module typechecks passed; `npm run build` passed before the final roster-visibility adjustment. Focused database/browser integration tests passed, including project-only invitation acceptance without organization membership, owner/admin-only organization rename, card-to-organization routes, normal project navigation, and project-only plus organization-and-project invitation modal choices. A full 36-test run passed before the final invitation-mode test assertions were added. On the final expanded run, 29 tests passed before an unrelated clock-driven multi-file editor test failed because Playwright could not fast-forward its clock; an isolated retry then timed out during the suite's 45-second backend setup hook. The expanded organization browser test passed with its longer timeout before the final roster-visibility assertion. The latest build and binding-generation attempts are now blocked by parser errors in the pre-existing untracked `shared/componentChat.ts` (line 58); that unrelated file was left untouched. Full-suite status is not green for the final worktree. `git diff --check` passed. No backend publication, commit, or push.
+
+Local data-preserving publication succeeded, adding generation_deadline/private scheduled expire_generation. Existing data and operator configuration preserved. No Maincloud publication, commit or push. Reload the signed-in app to expire the earlier stale request, then send a fresh message explicitly.
+
+
+## Follow-up chat error visibility - November 7, 2026
+
+Owner reported a generic rejection on a follow-up. Found that ProjectLibrary deliberately replaced every procedure rejection with the same generic chat error, hiding its safe workspace diagnostic. Changed error handling to return/throw the same allowlisted message in chat; arbitrary backend text is still hidden to avoid credential/provider-detail disclosure. Existing known session, access, rate, context and timeout errors are now actionable. The actual live follow-up rejection cause remains unconfirmed pending the owner's exact new diagnostic. No backend/provider request was made for diagnosis.
+
+Validation: frontend/module typechecks and production build passed. Three focused mocked browser/integration tests passed in 40.8 seconds, including successful persisted follow-up context, slow-reply cancel/recovery, and a rejected sixth message showing the precise safe rate error while preserving unsent text and not creating another job. git diff --check passed with existing line-ending notices. No full regression rerun, local backend publication, live NVIDIA call, commit or push for this frontend-only correction.
+
+
+## Stack-independent workspace - November 7, 2026
+
+Added shared/stackAdapters.ts with neutral files/revisions, registry, React and Blazor definitions, generation instructions, runtime delegation, gated preview startup/refresh/cleanup and draft export preparation. NVIDIA prompts select instructions from snapshot technologies. Workspace shows adapter/unsupported status and Code/Docs/Preview with multi-file selectors; StackPreview implements isolated HTTPS iframe lifecycle. Build including frontend/module typechecks passed; four adapter/E2B contract tests passed. git diff --check passed. Full browser regression not run; Source assertions updated to Code. Actual toolchains/runtime controllers, protected preview gateway, direct file editing/autosave and validated export/promotion remain unconnected. No live builds, backend publication, paid calls, commit or push. Existing dirty work preserved on feat/stack-adapters.
+
+
+## Editable draft workspace - November 7, 2026
+
+Implemented the first editor/chat increment: stack-neutral multi-file text editing and 500 ms autosave to a private component_draft table, authorized subscription view and revision-checked save reducer. Provider job artifacts remain immutable. Code/Docs inspect the same draft files. Follow-up chat flushes the selected draft, snapshots its revision/files, and rejects completion when that source changed or was deleted. Failed generation leaves existing edits intact. Viewers and mock fixtures remain read-only.
+
+Client handles saving/errors/retry, remote edits while clean, conflicts preserving local text, explicit discard/load, bounded save confirmation, navigation/sign-out flush and browser-close warning. Draft deletion in another session retains the open local text. The current unit of editing is a candidate file set, not yet a stable individually tracked component. Gemini orchestration, real builds/previews, promotion/recovery and export downloads remain unimplemented. Existing direct Nemotron chat remains accurately labeled.
+
+Validation: final frontend/module typechecks and production build passed; backend compilation and client binding generation passed. Seven focused integration/browser checks passed, followed by the complete 36-test regression on isolated frontend 52673/backend 52600 (complix-draft-complete). Coverage includes multi-file autosave/reload, live Docs, selected-source context, save-before-send, clean remote updates, conflict/text preservation and navigation blocking, access/revision/credential/path guards, failed/stale generation preserving edits, plus existing authentication, migration, references, mock preview and chat recovery. git diff --check passed. Interim runs encountered mismatched bindings during concurrent sharing changes, isolated-server startup/publication failures, and blocked Google Fonts requests; the functional navigation test now stubs only that external stylesheet and retains browser-error assertions. Final full regression passed. Test Vite processes needed explicit teardown; only verified test PIDs were stopped, leaving app servers untouched. All provider calls use mocked transport/synthetic operator credentials. No application backend publication, paid calls, dependency installs, commit or push. Updated README/design guide/decisions. Existing unrelated navigation/sharing work preserved. Official SDK references consulted: https://spacetimedb.com/docs/functions/procedures/ and https://spacetimedb.com/docs/clients/typescript/ .
+
+
+## Gemini coordinator increment - November 7, 2026
+
+Added shared/componentChat.ts for bounded Gemini REST discussion/tool routing, one Nemotron generation call and final summary. Preserves thought signatures in memory, omits private reasoning from replies, rejects unsafe tool operations and credential echoes, gates generation on registered stack support, and rechecks authorization/cancellation/source state between stages. generateProjectChat replaces the direct NVIDIA procedure; historical jobs remain available. Existing draft autosave/conflict checks and project isolation remain. UI uses coordinated readiness/stages, while credentials/models stay in protected backend configuration.
+
+Owner selected Flash for development. Added blank Gemini configuration entries to ignored .local/backend.env without changing existing settings, and extended the publisher's explicit backend environment allowlist. No real provider request, application publication, dependency installation, commit or push. Gemini account/model availability and real network transport remain unverified. Validation results pending below.
+
+## Organization invitation hardening and validation follow-up — November 7, 2026
+
+Combined organization/project invitations now upgrade an existing project-only grant rather than failing on its duplicate key. Project-only collaborators retain access without membership, and leaving/removal revokes those grants. Tightened invitation visibility so project managers see project-only invitations, not organization invitations they cannot revoke; organization-only invitations discard an irrelevant project ID. The UI only offers revoke controls to actors authorized by the corresponding backend reducer.
+
+Removed the remote Google Fonts CSS import so stylesheet loading does not depend on network access; the visual guide now specifies local Inter/JetBrains Mono with system fallbacks. The organization browser test waits for document commit and then the actual navigation controls, tolerating Vite's cold-start reload.
+
+Validation: `npm run backend:generate`, `npm run build`, `git diff --check`, and the focused organization database/browser tests passed. The focused run covered the duplicate-grant upgrade/removal, hidden invitation visibility, and organization workspace flows (2 tests passed). The full 40-test run was attempted twice: one run exposed and led to correction of a stale `chatEnabled` expectation; a subsequent run passed 37 tests but failed the slow-chat test on its stale pre-coordinator status text, which was updated. A targeted retry then timed out in `beforeAll` because the SpacetimeDB CLI reported `tsc not found in node_modules`. The complete suite is therefore not confirmed green. No backend publication, provider call, commit or push.

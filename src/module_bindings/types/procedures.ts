@@ -6,5 +6,8 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
+import * as GenerateProjectChatProcedure from "../generate_project_chat_procedure";
 
+export type GenerateProjectChatArgs = __Infer<typeof GenerateProjectChatProcedure.params>;
+export type GenerateProjectChatResult = __Infer<typeof GenerateProjectChatProcedure.returnType>;
 

@@ -5,6 +5,8 @@ import { OrganizationWorkspace } from './OrganizationWorkspace';
 import { useEffect, useState } from 'react';
 import './style.css';
 
+document.documentElement.dataset.theme = window.localStorage.getItem('complix.theme') === 'dark' ? 'dark' : 'light';
+
 const clientId = import.meta.env.VITE_AUTH_CLIENT_ID ?? 'client_034te16H37cuA4goFM0pev';
 const authority = 'https://auth.spacetimedb.com/oidc';
 const appOrigin = import.meta.env.VITE_AUTH_REDIRECT_ORIGIN ?? (import.meta.env.DEV ? 'http://127.0.0.1:5173' : window.location.origin);

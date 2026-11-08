@@ -6,7 +6,7 @@ Status: consolidated planning baseline; no implementation or deployment is claim
 
 ## 1. Purpose and decision status
 
-ComPlix generates and maintains custom, reusable UI component libraries. This document consolidates the original product documents, saved planning notes, and subsequent conversation through the renderer discussion and the November 7, 2026 selection of SpacetimeDB. It focuses on internal behavior and architecture; screen layouts are deferred.
+ComPlix generates and maintains custom, reusable UI component libraries. This document consolidates the original product documents, saved planning notes, and subsequent conversation through the renderer discussion and the November 7, 2026 selection of SpacetimeDB. It focuses on internal behavior and architecture. Screen layouts were initially deferred; the owner-confirmed workspace direction is recorded in section 24 and detailed in [design-guide.md](./design-guide.md).
 
 Status labels:
 
@@ -580,3 +580,36 @@ Framework(s), language(s), styling, libraries and version/compatibility notes ar
 Migration uses the documented removal of unique constraints and appended columns with defaults. The internal organizationId value 0 represents no organization; real organization IDs are generated from 1. The public UI calls this Private/no organization. Existing createdBy remains provenance; ownership mode distinguishes legacy organization ownership from new personal ownership.
 
 Deferred: ownership transfer/conversion, sharing across multiple organizations, anonymous/public links, project deletion, automatic technology compatibility checks and code migration. Generation, actual-code previews, workers and exports remain outside this milestone. Both initial output profiles remain required generation targets.
+
+## 24. Workspace layout and interaction preferences — November 7, 2026
+
+**Confirmed by explicit owner request:** sign-in opens a card grid of the user's projects. A separate shared-projects view filters by a selected organization. Opening a project shows its components workspace, with a toggleable component list, a preview/code area and a chat area. Project settings provide project configuration, including view-only requested technologies and references.
+
+The simple responsive layout and implementation boundaries are documented in [design-guide.md](./design-guide.md). When a backend capability is unavailable, the UI may provide a small, clearly labeled placeholder; it must not imply that chat, generated output, previews or validation are connected when they are not.
+
+## 24. Project reference intake - November 7, 2026
+
+Owner authorized project-specific reference intake and explicitly approved private inline SpacetimeDB storage for the initial text-only scope: 128 KiB per file, 20 references per project. Store original bytes and readable text plus purpose/uploader/time. Existing project permissions govern reads; editors upload/remove and viewers read. References remain untrusted data: no code execution, rendered HTML or automatic application of reference instructions. They do not change the current working library.
+
+Initial intake supports UTF-8 Markdown/text and selected source files, with client/server validation, project-scoped live lists, processing/error feedback and plain-text previews. Synchronous Ready status means readable text was decoded, not AI analysis. Duplicate filenames are rejected within the project rather than overwritten. Confirmed removal deletes the uploaded reference; intake undo is not implemented. Failed uploads preserve existing references.
+
+Deferred: PDF/image/ZIP extraction, repository imports, document-link retrieval, external storage, semantic indexing, AI consumption and formal reference-precedence/conflict policy. Nemotron generation remains separate. Requested technology configurations remain open-ended; verified generation/build/preview support is a distinct concern, initially required for both prototype stacks.
+
+## 25. Workspace navigation correction — November 7, 2026
+
+The owner's follow-up rejects tabs in favor of distinct pages. Project list, project components, settings, guidance, references, sharing, organizations, and invitations must render as separate URL-backed pages with browser history navigation; inactive pages should not remain mounted. This supersedes the earlier tab-navigation implementation note. See [design-guide.md](./design-guide.md) for the UI preferences and prototype boundaries.
+
+## 26. Frontend visual guide — November 7, 2026
+
+The owner designated [frontend-design-guide.html](./frontend-design-guide.html) as the visual reference for the React frontend. It specifies an organic sage/forest-green visual system with semantic light/dark themes, light by default, typography, horizontal navigation, and URL-backed project-page mockups. The canonical component workspace path is `/projects/:id/components`; primary project navigation is Components, Design guidance, and Settings. Existing product boundaries and backend truth remain authoritative; a visual mockup does not establish a backend capability.
+
+## 27. Organization workspaces and project invitations — November 7, 2026
+
+The owner approved an organization-card directory at `/organizations`, with each organization opening a URL-backed workspace at `/organizations/:id`. Overview, Projects, Members & invitations, and Settings are separate pages. The Projects page exposes only projects the caller can access and opens each through its regular project workspace. Owners and admins can rename organizations; existing organization role rules remain otherwise unchanged.
+
+The owner also approved project-only invitations that do not create organization membership, alongside organization-only and organization-plus-project choices. Project-only invitation acceptance creates an explicit project grant for the invited user's verified email-matched identity. Existing project isolation and organization departure/removal grant cleanup remain required. Online collaborator presence/activity in project docs is future work.
+
+
+## 26. Built-in AI chat and operator credentials - confirmed correction
+
+The owner explicitly clarified that ComPlix comes with project chat and end users never supply AI keys. Backend operator configuration supplies the provider credential and model. This supersedes all per-user/per-request key-entry proposals and their temporary implementation. The private .local/backend.env file is local operator setup; SpacetimeDB protects persisted backend environment values. Built-in chat uses authenticated project access, saved guidance/references, bounded conversation and latest draft context, with server-enforced usage limits. Discussion replies and generated draft files are shared only within authorized project access. Actual generation does not imply successful builds, previews or promotion. See decisions.md decision 27 and README for the current implementation boundary and setup.

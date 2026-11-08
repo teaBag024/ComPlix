@@ -78,6 +78,8 @@ When I ask for implementation, carry it through validation where possible.
 - Enforce project isolation in application code, not only in prompts.
 - Treat uploaded documents and generated code as untrusted input.
 - Keep generated-code execution isolated from application credentials.
+- ComPlix provides built-in project chat. Provider credentials belong to the
+  operator and stay in backend configuration; end users never supply API keys.
 - Never put secrets in source code, logs, documentation, previews, or exports.
 - Use environment-variable placeholders in example configuration.
 - Add meaningful tests for behavior and failure cases.

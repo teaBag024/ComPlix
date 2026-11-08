@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Web Application Design System & Interface Guidelines</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 20mm 18mm 20mm 18mm;
+    }
+
+    :root {
+      --color-primary: #2563EB;
+      --color-primary-hover: #1D4ED8;
+      --color-gray-900: #0F172A;
+      --color-gray-700: #334155;
+      --color-gray-500: #64748B;
+      --color-gray-200: #E2E8F0;
+      --color-gray-50: #F8FAFC;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: "SF Mono", Menlo, Consolas, "JetBrains Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body {
+      font-family: var(--font-ui);
+      color: var(--color-gray-900);
+      background-color: #FFFFFF;
+      line-height: 1.5;
+      font-size: 13px;
+      margin: 0;
+      padding: 0;
+    }
+
+    .doc-header {
+      border-bottom: 2px solid var(--color-gray-900);
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+    }
+
+    .doc-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0 0 4px 0;
+    }
+
+    .doc-meta {
+      font-size: 11px;
+      color: var(--color-gray-500);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--color-gray-900);
+      border-bottom: 1px solid var(--color-gray-200);
+      padding-bottom: 6px;
+      margin-top: 24px;
+      margin-bottom: 12px;
+      page-break-after: avoid;
+    }
+
+    h3 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--color-gray-700);
+      margin-top: 14px;
+      margin-bottom: 6px;
+      page-break-after: avoid;
+    }
+
+    p {
+      margin: 0 0 10px 0;
+      color: var(--color-gray-700);
+    }
+
+    ul {
+      margin: 0 0 12px 0;
+      padding-left: 20px;
+      color: var(--color-gray-700);
+    }
+
+    li {
+      margin-bottom: 4px;
+    }
+
+    strong {
+      color: var(--color-gray-900);
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background-color: var(--color-gray-50);
+      border: 1px solid var(--color-gray-200);
+      padding: 2px 4px;
+      border-radius: 4px;
+      color: #0F172A;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px 0;
+      font-size: 12px;
+      page-break-inside: avoid;
+    }
+
+    th, td {
+      border: 1px solid var(--color-gray-200);
+      padding: 8px 10px;
+      text-align: left;
+    }
+
+    th {
+      background-color: var(--color-gray-50);
+      font-weight: 600;
+      color: var(--color-gray-900);
+    }
+
+    .swatch-group {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+      page-break-inside: avoid;
+    }
+
+    .swatch {
+      border: 1px solid var(--color-gray-200);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 11px;
+    }
+
+    .swatch-color {
+      height: 32px;
+      width: 100%;
+    }
+
+    .swatch-info {
+      padding: 6px 8px;
+      background: #FFFFFF;
+    }
+
+    .swatch-name {
+      font-weight: 600;
+      color: var(--color-gray-900);
+    }
+
+    .swatch-hex {
+      font-family: var(--font-mono);
+      color: var(--color-gray-500);
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="doc-header">
+    <div class="doc-meta">Specification Document · v1.0.0</div>
+    <h1 class="doc-title">Web Application Design System & Interface Guidelines</h1>
+  </div>
+
+  <h2>Core Foundations & Philosophy</h2>
+  <ul>
+    <li><strong>Clarity over cleverness:</strong> Content takes precedence over decoration. Visual flair serves navigation, information scent, and hierarchy.</li>
+    <li><strong>Density with purpose:</strong> Compact tables and high-density layouts for data dashboards; breathable, open layouts for onboarding and consumer-facing flows.</li>
+    <li><strong>Predictable affordance:</strong> Standardized hover, active, and focus states across all interactive surfaces.</li>
+  </ul>
+
+  <h2>1. Color Palette & Token Architecture</h2>
+  <p>Primitive neutrals establish background elevation and readable hierarchy, while semantic tokens designate actionable and stateful workflows.</p>
+
+  <div class="swatch-group">
+    <div class="swatch">
+      <div class="swatch-color" style="background-color: #0F172A;"></div>
+      <div class="swatch-info">
+        <div class="swatch-name">Gray-900</div>
+        <div class="swatch-hex">#0F172A</div>
+      </div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-color" style="background-color: #334155;"></div>
+      <div class="swatch-info">
+        <div class="swatch-name">Gray-700</div>
+        <div class="swatch-hex">#334155</div>
+      </div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-color" style="background-color: #94A3B8;"></div>
+      <div class="swatch-info">
+        <div class="swatch-name">Gray-400</div>
+        <div class="swatch-hex">#94A3B8</div>
+      </div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-color" style="background-color: #E2E8F0;"></div>
+      <div class="swatch-info">
+        <div class="swatch-name">Gray-200</div>
+        <div class="swatch-hex">#E2E8F0</div>
+      </div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Role</th>
+        <th>Light Hex</th>
+        <th>Dark Hex</th>
+        <th>Typical Usage</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Primary (Brand)</strong></td>
+        <td><code>#2563EB</code></td>
+        <td><code>#3B82F6</code></td>
+        <td>Primary action buttons, active tabs, focus rings</td>
+      </tr>
+      <tr>
+        <td><strong>Primary Hover</strong></td>
+        <td><code>#1D4ED8</code></td>
+        <td><code>#60A5FA</code></td>
+        <td>Hover state for brand actions</td>
+      </tr>
+      <tr>
+        <td><strong>Success</strong></td>
+        <td><code>#16A34A</code></td>
+        <td><code>#22C55E</code></td>
+        <td>Badges, confirmations, positive financial trends</td>
+      </tr>
+      <tr>
+        <td><strong>Warning</strong></td>
+        <td><code>#D97706</code></td>
+        <td><code>#F59E0B</code></td>
+        <td>Session timeouts, non-destructive alerts, caveats</td>
+      </tr>
+      <tr>
+        <td><strong>Destructive / Error</strong></td>
+        <td><code>#DC2626</code></td>
+        <td><code>#EF4444</code></td>
+        <td>Form errors, delete confirmations, failed syncs</td>
+      </tr>
+      <tr>
+        <td><strong>Info</strong></td>
+        <td><code>#0284C7</code></td>
+        <td><code>#38BDF8</code></td>
+        <td>Inline hints, feature announcements, tooltips</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>2. Typography & Scale</h2>
+  <p><strong>UI Stack:</strong> <code>Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif</code><br />
+  <strong>Monospace Stack:</strong> <code>"JetBrains Mono", "SF Mono", Consolas, monospace</code></p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Level</th>
+        <th>Size / Line Height</th>
+        <th>Weight</th>
+        <th>Usage</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Display</strong></td>
+        <td>32px / 40px</td>
+        <td>700 (Bold)</td>
+        <td>Marketing heroes, initial welcome screens</td>
+      </tr>
+      <tr>
+        <td><strong>Heading 1 (H1)</strong></td>
+        <td>24px / 32px</td>
+        <td>600 (Semi-Bold)</td>
+        <td>Main view and dashboard screen titles</td>
+      </tr>
+      <tr>
+        <td><strong>Heading 2 (H2)</strong></td>
+        <td>20px / 28px</td>
+        <td>600 (Semi-Bold)</td>
+        <td>Section divides, modal dialog headers</td>
+      </tr>
+      <tr>
+        <td><strong>Heading 3 (H3)</strong></td>
+        <td>16px / 24px</td>
+        <td>500 (Medium)</td>
+        <td>Card titles, grouped fieldset legends</td>
+      </tr>
+      <tr>
+        <td><strong>Body Regular</strong></td>
+        <td>14px / 20px</td>
+        <td>400 (Regular)</td>
+        <td>Default copy, inputs, table data cells</td>
+      </tr>
+      <tr>
+        <td><strong>Body Small</strong></td>
+        <td>12px / 16px</td>
+        <td>400 / 500</td>
+        <td>Form helper text, badges, secondary timestamps</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="page-break"></div>
+
+  <h2>3. Spacing, Grid & Depth</h2>
+  <ul>
+    <li><code>4px</code> (0.25rem): Icon-to-text micro gaps, compact tags.</li>
+    <li><code>8px</code> (0.50rem): Standard component gap, button and input vertical padding.</li>
+    <li><code>16px</code> (1.00rem): Card internal padding, standard form field margins.</li>
+    <li><code>24px</code> (1.50rem): Structural card margins, multi-column gutters.</li>
+    <li><code>32px</code> (2.00rem): Macro layout section spacing.</li>
+  </ul>
+
+  <h3>Elevation & Box Shadows</h3>
+  <ul>
+    <li><strong>Flat (0px):</strong> Page background canvas and flush flat panels.</li>
+    <li><strong>Low / Card:</strong> <code>0 1px 3px rgba(0,0,0,0.06)</code> — Standard content containers.</li>
+    <li><strong>Mid / Dropdown:</strong> <code>0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.04)</code> — Popovers, flyouts, and menus.</li>
+    <li><strong>High / Modal:</strong> <code>0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05)</code> — Floating dialogs and command bars.</li>
+  </ul>
+
+  <h2>4. Component Specifications</h2>
+
+  <h3>Buttons</h3>
+  <ul>
+    <li><strong>Primary:</strong> Solid <code>#2563EB</code> with white text. Limit to at most one primary action per view section.</li>
+    <li><strong>Secondary:</strong> 1px solid <code>#E2E8F0</code> border, white background, <code>#0F172A</code> text.</li>
+    <li><strong>Destructive:</strong> Solid <code>#DC2626</code> or outlined red. Always require secondary confirmation for destructive actions.</li>
+    <li><strong>Sizing:</strong> 32px height for compact tables/toolbars; 40px height for default forms and views. Border radius: 6px.</li>
+  </ul>
+
+  <h3>Form Controls</h3>
+  <ul>
+    <li><strong>Inputs:</strong> Fixed height 40px, 1px border (<code>#E2E8F0</code>), 6px border radius, 14px text.</li>
+    <li><strong>Focus State:</strong> Border transitions to <code>#2563EB</code> with an outer glow: <code>box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2)</code>. Never remove focus outlines without providing this ring.</li>
+    <li><strong>Error State:</strong> Border transitions to <code>#DC2626</code> accompanied by persistent helper text placed below the input.</li>
+  </ul>
+
+  <h3>Modals & Overlays</h3>
+  <ul>
+    <li><strong>Backdrop:</strong> <code>rgba(15, 23, 42, 0.45)</code> with <code>backdrop-filter: blur(4px)</code>.</li>
+    <li><strong>Standard Widths:</strong> Small: 440px (confirmations), Medium: 600px (standard forms), Large: 880px (data inspectors).</li>
+    <li><strong>Interaction:</strong> Must bind the <kbd>Esc</kbd> key to close unless unsaved modifications exist in the form.</li>
+  </ul>
+
+  <h2>5. Accessibility & Motion Rules</h2>
+  <ul>
+    <li><strong>Contrast Compliance:</strong> Maintain a minimum ratio of <strong>4.5:1</strong> for normal UI text and <strong>3:1</strong> for graphical controls and larger text (WCAG AA).</li>
+    <li><strong>Keyboard Navigation:</strong> Modals must trap focus while open; form inputs must follow logical document order (`tabindex`).</li>
+    <li><strong>Transitions:</strong>
+      <ul>
+        <li>Micro-interactions (buttons, hovers): <code>150ms ease-out</code></li>
+        <li>Drawers and sliding panels: <code>250ms cubic-bezier(0.16, 1, 0.3, 1)</code></li>
+        <li>Full modal appearance: <code>200ms ease-in-out</code></li>
+      </ul>
+    </li>
+    <li><strong>Reduced Motion:</strong> Honor the <code>@media (prefers-reduced-motion: reduce)</code> query by collapsing transition durations to zero.</li>
+  </ul>
+
+</body>
+</html>

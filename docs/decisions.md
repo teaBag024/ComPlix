@@ -216,7 +216,7 @@ Requested technologies remain unverified text (blank allowed, 1000 characters/fi
 
 Sources consulted: https://spacetimedb.com/docs/databases/automatic-migrations/ and https://spacetimedb.com/docs/tables/default-values/ (removing unique constraints and appending defaulted columns); https://spacetimedb.com/docs/functions/reducers/lifecycle/ (init is not an update migration); installed SpacetimeDB 2.14.1 types/bindings and server/client skills. No dependency changes.
 
-## Workspace navigation � November 7, 2026
+## Workspace navigation — November 7, 2026
 
 Confirmed owner request: simplify the frontend, reduce scrolling with tabs, and use shadcn/ui.
 Implemented six task-focused workspace tabs with an always-visible project selector.
@@ -225,3 +225,129 @@ instead of adding a Tailwind build pipeline. Inactive panels stay mounted and ar
 hidden with CSS to preserve drafts/autosave while navigating. Requested technologies,
 permissions, backend rules and generated output requirements remain unchanged.
 Source: https://ui.shadcn.com/docs/components/radix/tabs
+
+## Frontend ownership and shared-space clarity - November 7, 2026
+
+Owner feedback: the interface must communicate that users own multiple projects, each project has its own technology stack, users can belong to zero or many organizations, and organizations are optional shared spaces for multiple projects.
+
+Implementation: Projects separates personally owned and shared/organization-owned project cards, showing each requested stack and private/space status. The selected-project header carries that context across tabs. Organizations shows membership spaces and the authorized projects available within each, with direct project navigation. Space project counts describe only projects the caller can access, not the organization's total. Membership/admin roles do not gain new visibility from this UI. Existing explicit sharing rules and historical ownership remain unchanged. Existing Radix tabs and mounted-draft behavior are retained; no new dependencies/backend integration.
+
+## Reference intake preparation - November 7, 2026
+
+Confirmed: owner authorized the small project-reference intake milestone: Markdown/text/selected source files, list/purpose/status/plain-text preview, editor upload/removal, authorized viewer reads and project isolation. Uploaded code is reference data, not executable code or automatically promoted library content.
+
+Initially proposed; subsequently explicitly approved by the owner: store small original file bytes plus readable UTF-8 content in private SpacetimeDB tables, up to 128 KiB/file and 20 references/project. A separate local file service is not needed for this text-only increment; external storage remains open for larger/binary formats. The approval supersedes the pending preparation status below.
+
+Verified official sources: https://spacetimedb.com/docs/tables/file-storage/ documents inline binary arrays and transactional subscriptions; https://spacetimedb.com/docs/functions/views/ documents caller-dependent scoped views. Installed 2.14.1 SDK supports byte arrays and module text decoding. No storage implementation or remote resource was added yet.
+
+Related generation direction: owner expects attempts for arbitrary requested technology configurations, not a hard-coded profile gate. Initial end-to-end verification remains on both required output stacks. Nemotron is the owner's preferred model family; provider/model evaluation, key handling and execution isolation are still separate implementation decisions. References will be untrusted supporting context; final precedence/conflict handling is not silently decided by this intake work.
+
+## Reference intake implementation - November 7, 2026
+
+Accepted storage decision: inline private SpacetimeDB storage, 128 KiB/file and 20 references/project. Routine choices: immutable uploaded references with case-insensitive filename uniqueness within each project; changing a reference requires explicit removal and a new upload. Filenames have no paths, up to 180 characters. The initial allowlist covers Markdown/text and common source/configuration formats; it excludes PDF, images, archives and environment files. UTF-8 decoding and readable-text checks run in both client and server; byte limits and quota are enforced transactionally on the server.
+
+Original bytes, decoded text, purpose, uploader and upload time are saved atomically. Authorized caller views expose references only for accessible projects; upload/removal requires editor access. Grant/membership revocation retracts reference data through the same project authorization rules. Removal uses explicit confirmation and deletes the reference's original/text; undo is not implemented for intake. Uploads never execute code, render HTML/Markdown or call an AI provider. Ready means UTF-8 text is available, not AI interpretation or semantic extraction.
+
+Prototype limitation: the scoped workspace subscription currently includes reference bytes/text for all accessible projects. Caps bound each project, but paging/lazy content loading and external binary storage remain future scaling work. Both generated-output profiles and arbitrary requested technologies are unaffected. No provider key, model API or paid service is involved.
+
+## Nemotron sandbox planning - November 7, 2026
+
+Owner chose "Plan the complete build/preview sandbox first" rather than immediate draft-only integration. Pause application/provider wiring and generated-code execution pending this design. Full proposal and unsettled decisions: generation-sandbox-plan.md. Docker containers, local trusted coordinator, memory-only per-request client keys, Blazor WebAssembly/static previews and specific limits are recommendations, not approved infrastructure.
+
+Verified read-only local prerequisites: Docker Desktop Linux engine is running (Docker 29.8.1, Desktop 4.93.0, WSL2). Sandbox access initially failed; outside-sandbox read-only inspection succeeded. Host dotnet is absent; no host install is required if container toolchains are adopted. No images pulled or containers executed.
+
+Independent preparation: generation/nvidia.mjs and generation/context.mjs plus three mocked tests. NVIDIA model candidate nvidia/nemotron-3.5-super-vl-120b-a12b, fixed official endpoint, capped output/time/response size, safe errors, no retries, reasoning not returned, project-scoped bounded context. These helpers are not connected to UI/Spacetime jobs and have not made real provider calls. Exact model/account access, costs and key handling still need implementation acceptance. The next proposed increment is sandbox proof with fixture components for both required stacks, before live generation.
+
+## Library and generation workflow implementation with mocks - November 7, 2026
+
+Owner authorized starting implementation and explicitly selected "Build with mocks; configure accounts later." No paid provider calls or external deployment are authorized by this selection. E2B is the hosted execution candidate; Docker Desktop is not a requirement or installed dependency of ComPlix. All project technology requests remain open-ended; mock execution does not establish support for any stack.
+
+Implemented first slice: private generation_job records and scoped views, editor-only queue/advance/cancel/delete controls, immutable saved context, selected-reference/project validation, idempotent request IDs, one active job/project, stale-input failure and bounded history (20 jobs/project). Deleting terminal history requires explicit UI confirmation and removes its saved context/artifacts. Removing a reference does not erase older job snapshots; users must delete those history entries separately. Mock jobs cannot be promoted to current or marked as actual build/validation evidence.
+
+Local publisher explicitly sets GENERATION_MODE=mock unless overridden; absence/other values disable generation. Mock advancement is a guarded reducer with server-controlled fixtures, not a client assertion of real validation. No extra application server, secret storage or provider-key fields added. Current stages advance from the browser; interruption preserves state for explicit resume/cancel. Durable background orchestration/leases and worker authentication remain open for live execution.
+
+Prepared injected E2B SDK-controller adapter contract: operator-selected template and commands, protected traffic, outbound network disabled, per-job directory, candidate path/count/size checks, bounded commands and teardown on failure. The returned private traffic token stays controller-side; no iframe/private-preview integration consumes it yet. Live SDK package/version, custom toolchains, command readiness checks, proxy/session access, lifecycle recovery and real provider acceptance remain unverified. Do not mistake this adapter for E2B-compatible Spacetime WASM SDK support; direct procedure/HTTP orchestration is still to validate, potentially requiring a narrowly scoped integration worker.
+
+Official sources reviewed: https://spacetimedb.com/docs/functions/procedures/ ; https://docs.e2b.dev/network/internet-access ; https://docs.e2b.dev/network/restrict-public-access ; https://docs.e2b.dev/sandbox/secured-access ; https://docs.e2b.dev/commands and upstream JS command types. These document provider controls, not successful ComPlix live integration.
+
+## 25. Workspace layout and interaction preferences — November 7, 2026
+
+Confirmed by explicit owner request:
+- After sign-in, show the user's projects as cards. Provide a separate Shared projects view with an organization filter.
+- Opening a project goes to its component workspace. Keep the available component list toggleable beside a preview/code surface and a chat area.
+- Put project configuration behind a settings button. Requested technology details are view-only there; references are summarized there with a link to reference management.
+- Keep the presentation simple. If a backend capability is not implemented, use a small and honest placeholder rather than building unsupported infrastructure or implying a feature works.
+
+The detailed UI hierarchy, responsive behavior and implementation status are in [design-guide.md](./design-guide.md). This layout decision does not change project authorization, generation validation, mock status or the distinction between requested technologies and verified support.
+
+
+## 26. Per-request NVIDIA draft generation - superseded by decision 27
+
+Confirmed scope: the owner has NVIDIA, no E2B account yet, and requested the key-entry implementation. Actual provider usage is initiated by the owner's explicit Generate action; development validation continues with synthetic keys and mocked transport only.
+
+Implemented routine choice: a TypeScript SpacetimeDB procedure owns the NVIDIA HTTP call directly, with permission checks in transactions before sending and before accepting results. No additional application server or worker is introduced for this bounded request. The key is a procedure parameter, never a reducer argument or stored job field. A private immutable project snapshot is sent; only authorized job views expose the result. The model identifier is recorded per job. Existing model-less mock jobs migrate with an empty model default. These choices supersede the earlier statement that no API-key input exists; they do not approve a persistent key vault.
+
+Default: `nvidia/nemotron-3.5-super-vl-120b-a12b`, nonstreaming strict JSON-schema output, low reasoning, 4096 completion-token cap, 60 seconds, no automatic retries. One active job/project and existing history/context limits apply. Request IDs prevent restarting a claimed job on replay. Parsed manifests reject unsafe/duplicate paths, excessive output, incomplete completion and echoed keys (including JSON escapes). Artifacts are unverified source only, never executed or promoted. Cancellation cannot refund/guarantee stopping provider work; a process interruption may leave a job requiring cancellation. These are prototype limitations, not durable worker orchestration guarantees.
+
+Verified official capabilities: [SpacetimeDB procedures](https://spacetimedb.com/docs/functions/procedures/) support HTTP outside transactions and `withTx` for authorized database updates; [NVIDIA API reference](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer) documents this endpoint/model and JSON-schema, reasoning and token options. [Upstream HTTP implementation](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/core/src/host/instance_env.rs) and the installed server reject loopback HTTP. Therefore procedure tests use a transport-instrumented module copy under ignored .local, not a production fixture endpoint/flag or relaxed server controls. Production transport/live model output remain unverified until owner acceptance.
+
+Still open: E2B credentials/templates, authenticated protected preview routing, dependency/toolchain policy, real compiler/tests, background recovery, artifact promotion and exports. Requested technologies remain open-ended; no tested stack support follows from draft generation.
+
+## 27. Built-in chat with operator-managed AI credentials - November 7, 2026
+
+Confirmed owner correction: ComPlix supplies project chat. End users never enter AI provider keys. Decision 26's per-user key flow was an incorrect interpretation and is superseded; retain it only as implementation history. The operator configures NVIDIA once on the backend. The browser cannot supply either a key or model to the chat procedure.
+
+Implemented: operator NVIDIA_API_KEY/NVIDIA_MODEL optional environment declarations; no key means an honest unavailable state, while other app features remain usable. A private ignored .local/backend.env file feeds the local publish helper, which forwards only the named provider settings to SpacetimeDB's protected environment. Backend-only configuration does not use Vite env files. No real credential has been requested/read by development validation, and no quota is used in tests. See README for setup. SpacetimeDB environment values persist between publishes; emptying the local file does not revoke a stored key.
+
+Project chat is connected to the existing authorized procedure/job records. Each accepted turn records the member's request, immutable context and sanitized reply, with optional draft files. Successful discussion can return no files; code changes return a complete candidate file set. Context includes up to six recent successful turns (replies capped at 2000 characters for context), latest draft files, saved guidance/technologies and explicitly selected references within the existing 64 KiB cap. Authorized collaborators read shared turns through subscriptions; viewers cannot send. Existing history controls also delete conversation turns. Current 20-job prototype history cap applies to chat; this is not a long-term conversation design.
+
+Routine bounded defaults: private per-identity usage counters allow five new requests per minute across projects; replayed request IDs do not spend a second allowance. Counters persist separately from deletable history. One active request/project, token/time/output limits and no automatic retries remain. These are prototype controls, not a global spend ceiling. Rate plans, operator budgets and durable conversation/orchestration design remain open. No component is promoted/validated and no generated code is executed.
+
+Official references checked for this correction: [AI calls from modules](https://spacetimedb.com/docs/how-to/app-patterns/call-ai-model/) explicitly describes provider credentials kept in database environment and private usage controls; [environment variables](https://spacetimedb.com/docs/databases/environment-variables/) documents declarations, protected settings, process-environment publication and preservation; [NVIDIA inference](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer) documents the structured response options. Live NVIDIA output and E2B remain unverified.
+
+## 28. Workspace navigation correction — November 7, 2026
+
+The owner's explicit feedback rejects the earlier tabbed workspace design. Project lists, project components, project settings, guidance, references, sharing, organizations, and invitations are separate pages with URL-backed navigation and browser back/forward support. Each page renders only its own content; do not retain hidden tab panels. This supersedes the tab-navigation choices in the earlier “Workspace navigation” and “Frontend ownership and shared-space clarity” entries. Keep the existing project-card, shared-project filter, component workspace, and settings behavior.
+
+## 29. Frontend visual design guide — November 7, 2026
+
+The owner designated [frontend-design-guide.html](./frontend-design-guide.html) as the current frontend visual reference. Follow its organic sage/forest-green palette, semantic light/dark theme tokens, typography, soft horizontal navigation, and URL/page mockups. Light is the default; the UI has a user-toggleable dark theme. Use `/projects/:id/components` as the canonical project-workspace route, with Components, Design guidance, and Settings as the primary project navigation. Preserve product truth and existing backend permissions; mockups are not permission to claim unavailable generation/build/preview behavior. See [design-guide.md](./design-guide.md) for implementation boundaries.
+
+## Create actions use popup dialogs — November 7, 2026
+
+Owner requested that Create project, Create organization, and Create invitation actions open popup modals rather than inline forms. Use accessible native modal dialogs with a visible cancel/close action and preserve form values on failure. Close a dialog only after its create request succeeds; preserve the existing reducer authorization and error handling. Other edit/manage forms are outside this request.
+
+## Organization workspaces and project-only invitations — November 7, 2026
+
+Owner approved organization management modeled on project workspaces: `/organizations` remains a card directory; managing an organization opens `/organizations/:id` with distinct Overview, Projects, Members & invitations, and Settings pages. Projects shown there remain limited to the caller's authorized projects and open in their normal project workspace. Organization owners and admins may rename; existing organization/member management rules remain otherwise unchanged.
+
+Owner approved project invitations that can grant access to the project alone, without organization membership, alongside organization-only and organization-plus-project invitation choices. Project-only acceptance grants only the selected project's viewer/editor role. The explicit `project_access` grant provides access; organization membership or administrator status is not inferred. Continue project-isolated subscriptions/views and remove organization-linked grants when the member leaves or is removed. Online collaborator presence/activity in project docs is future work.
+
+## Chat latency and abandoned-request recovery - November 7, 2026
+
+Owner observed an AI request still generating after 374 seconds, beyond the configured 60-second HTTP timeout. Exact interruption/provider cause remains unconfirmed; filtered backend log inspection did not establish it. Found a definite lifecycle gap: a committed generating row had no deadline if the procedure was interrupted or finalization failed.
+
+Implemented a private scheduled deadline per NVIDIA job at 90 seconds. It marks only active NVIDIA jobs failed; late results are ignored by the existing state check. Re-registering a verified profile or queuing work also expires authorized stale jobs, including jobs created before deadlines existed. This is a bounded recovery mechanism, not a general worker/retry system. No automatic paid retries. Cancellation/deadlines discard results but do not guarantee stopping upstream billing or execution.
+
+Routine latency adjustment: set reasoning_effort to none instead of low for interactive requests, retaining the model and 4096-token bound. NVIDIA documents none as disabling reasoning tokens: https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer . Actual latency improvement remains unmeasured without a live request. Responses still arrive complete rather than stream. UI now shows elapsed time, overdue guidance and a directly accessible Cancel reply action; a 75-second client confirmation limit and attempt guards prevent a lost RPC from indefinitely holding the local sending state.
+
+Scheduler reference: https://spacetimedb.com/docs/tables/schedule-tables/ . onSchedule callbacks are private; deadlines are created transactionally with jobs. Production deadline is 90 seconds; automated tests instrument only the abandoned-job fixture to expire at two seconds.
+
+
+## Stack-independent workspace - November 7, 2026
+
+Confirmed owner correction: the workspace is stack-independent. Adapters own file/generation conventions, dependencies, compilation, validation, preview lifecycle and export preparation. React and Blazor are initial adapters. External isolated runtimes are allowed; browser compilation is optional. Unsupported targets have no generic compiler fallback. Tested runtime support remains separate from requested technologies.
+
+
+## Direct editor and chat workflow - November 7, 2026
+
+Confirmed owner clarification: users edit multi-file component drafts directly beside component/chat inspection. Gemini is intended to coordinate conversation and call Nemotron for generation. Both manual and generated changes use a shared draft workspace, with autosave and adapter checks before promotion. The existing direct Nemotron chat is a transitional implementation, not Gemini orchestration.
+
+First increment: editable checkpoints are scoped to one project and one generated candidate file set, with optimistic revision checks. Provider job responses remain immutable. Selected-draft chat flushes autosave, captures the exact saved revision, and rejects stale completion if that revision changes during generation. This checkpoint model does not yet establish stable per-component identity, validated current revisions or recovery. Candidate file sets may contain multiple Common/composed components. Gemini model/version, credentials and coordinator implementation remain to be connected; no provider replacement or paid call is performed by this increment.
+
+
+## Gemini coordinator with Nemotron generation - November 7, 2026
+
+Confirmed: owner selected Gemini Flash for development because budget is limited. Use operator-configurable GEMINI_MODEL, defaulting to the currently documented stable gemini-3.8-flash, and backend-only GEMINI_API_KEY. Never ask end users for keys. Source now routes chat through Gemini; it can answer directly or request one narrowly scoped Nemotron generation tool. The direct public NVIDIA procedure is removed; historical NVIDIA jobs remain readable/editable. No fallback bypasses a missing Gemini configuration.
+
+Bounded prototype implementation: at most two Gemini calls and one Nemotron call per accepted turn, existing five-turn/minute identity limit, no automatic retries, LOW thinking for Gemini 3, bounded context/output and existing 90-second job deadline. This is not a hard monetary budget. Tools cannot supply project IDs, commands, credentials or validation/promotion claims. Stack support and authorization/source revisions are enforced by the application. Live account/model acceptance, background orchestration, actual builds/previews and validated promotion remain open.

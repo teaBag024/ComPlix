@@ -15,4 +15,6 @@ export default __t.row({
   projectId: __t.u64().name("project_id"),
   user: __t.identity(),
   role: __t.string(),
+  name: __t.string(),
+  email: __t.string(),
 });

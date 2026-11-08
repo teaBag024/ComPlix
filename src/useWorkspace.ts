@@ -1,3 +1,9 @@
+import type draftSchema from './module_bindings/visible_component_drafts_table';
+export type ComponentDraft = Infer<typeof draftSchema>;
+import type jobSchema from './module_bindings/visible_generation_jobs_table';
+export type GenerationJob = Infer<typeof jobSchema>;
+import type referenceSchema from './module_bindings/visible_references_table';
+export type ProjectReference = Infer<typeof referenceSchema>;
 import type { Infer } from 'spacetimedb';
 import type guidanceSchema from './module_bindings/visible_guidance_table';
 export type Guidance = Infer<typeof guidanceSchema>;
@@ -7,8 +13,8 @@ import type { UserProfile, OrganizationSummary, ProjectSummary, MemberSummary, I
 
 export const endpoint = import.meta.env.VITE_SPACETIME_URI ?? 'http://127.0.0.1:3000';
 export const database = import.meta.env.VITE_SPACETIME_DATABASE ?? 'complix-local';
-export type WorkspaceData = { profile?: UserProfile; organizations: OrganizationSummary[]; projects: ProjectSummary[]; members: MemberSummary[]; invitations: InvitationSummary[]; guidance: Guidance[]; shares: ProjectShareSummary[] };
-const empty = (): WorkspaceData => ({ organizations: [], projects: [], members: [], invitations: [], guidance: [], shares: [] });
+export type WorkspaceData = { profile?: UserProfile; organizations: OrganizationSummary[]; projects: ProjectSummary[]; members: MemberSummary[]; invitations: InvitationSummary[]; guidance: Guidance[]; shares: ProjectShareSummary[]; references: ProjectReference[]; jobs: GenerationJob[]; drafts: ComponentDraft[]; generationMode: string; chatEnabled: boolean };
+const empty = (): WorkspaceData => ({ organizations: [], projects: [], members: [], invitations: [], guidance: [], shares: [], references: [], jobs: [], drafts: [], generationMode: 'unconfigured', chatEnabled: false });
 export function useWorkspace(token: string, attempt: number) {
   const [data, setData] = useState(empty);
   const [connection, setConnection] = useState<DbConnection>();
@@ -45,9 +51,14 @@ export function useWorkspace(token: string, attempt: number) {
                 invitations: [...ctx.db.myInvitations.iter()],
                 guidance: [...ctx.db.visibleGuidance.iter()],
                 shares: [...ctx.db.managedProjectShares.iter()],
+                references: [...ctx.db.visibleReferences.iter()],
+                jobs: [...ctx.db.visibleGenerationJobs.iter()],
+                drafts: [...ctx.db.visibleComponentDrafts.iter()],
+                generationMode: [...ctx.db.generationSettings.iter()][0]?.mode ?? 'unconfigured',
+                chatEnabled: [...ctx.db.generationSettings.iter()][0]?.chatEnabled ?? false,
               });
             };
-            const handles = [ctx.db.myProfile, ctx.db.myOrganizations, ctx.db.visibleProjects, ctx.db.organizationMembers, ctx.db.myInvitations, ctx.db.visibleGuidance, ctx.db.managedProjectShares];
+            const handles = [ctx.db.myProfile, ctx.db.myOrganizations, ctx.db.visibleProjects, ctx.db.organizationMembers, ctx.db.myInvitations, ctx.db.visibleGuidance, ctx.db.managedProjectShares, ctx.db.visibleReferences, ctx.db.visibleGenerationJobs, ctx.db.visibleComponentDrafts, ctx.db.generationSettings];
             for (const handle of handles) {
               handle.onInsert(refresh); handle.onDelete(refresh); handle.onUpdate(refresh);
             }
@@ -58,7 +69,7 @@ export function useWorkspace(token: string, attempt: number) {
               refresh();
               setConnection(ctx);
               setStatus('ready');
-            }).onError(fail).subscribe([tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares]);
+            }).onError(fail).subscribe([tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.generationSettings]);
           }).catch(fail);
         }).onDisconnect(fail).onConnectError(fail).build();
     } catch { fail(); }

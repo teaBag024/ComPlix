@@ -1,5 +1,10 @@
+import { isChatMode, runComponentChat, GEMINI_MODEL } from '../../shared/componentChat';
+import { validateDraftFiles } from '../../shared/draftFiles';
+import { NVIDIA_MODEL } from '../../shared/nvidiaDraft';
+import { generationStages, MAX_GENERATION_HISTORY, mockArtifacts } from '../../shared/generationWorkflow';
+import { MAX_PROJECT_REFERENCES, validateReferenceFile } from '../../shared/referenceFiles';
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx, type ViewCtx } from 'spacetimedb/server';
-import { Identity, Timestamp } from 'spacetimedb';
+import { Identity, Timestamp, TimeDuration, ScheduleAt } from 'spacetimedb';
 
 // Preserve the first milestone's schema and data for explicit, proof-of-possession transfer.
 const project = table({ name: 'project' }, {
@@ -33,8 +38,25 @@ const projectGuidance = table({ name: 'project_guidance' }, {
   projectId: t.u64().primaryKey(), revision: t.u64(), audience: t.string(), technical: t.string(),
   style: t.string(), colors: t.string(), typography: t.string(), spacing: t.string(), accessibility: t.string(), guidance: t.string(),
 });
-const db = schema({ project, userProfile, organization, membership, workspaceProject, projectAccess, invitation, legacyTransfer, projectGuidance }, {
-  env: { AUTH_ISSUER: t.string().optional(), AUTH_CLIENT_ID: t.string().optional() },
+const projectReference = table({ name: 'project_reference' }, {
+  id: t.u64().primaryKey().autoInc(), projectId: t.u64().index('btree'), filename: t.string(), purpose: t.string(),
+  bytes: t.array(t.u8()), content: t.string(), uploadedBy: t.identity(), createdAt: t.timestamp(),
+});
+const generationJob = table({ name: 'generation_job' }, {
+  id: t.u64().primaryKey().autoInc(), requestId: t.string().unique(), projectId: t.u64().index('btree'),
+  requestedBy: t.identity(), request: t.string(), state: t.string(), mode: t.string(), scenario: t.string(),
+  snapshot: t.string(), fingerprint: t.string(), artifacts: t.string(), diagnostic: t.string(), createdAt: t.timestamp(), model: t.string().default(''),
+});
+const draftFile = t.object('DraftFile', { path: t.string(), content: t.string() });
+// Editable checkpoints are separate from immutable provider responses.
+const componentDraft = table({ name: 'component_draft' }, {
+  jobId: t.u64().primaryKey(), projectId: t.u64().index('btree'), revision: t.u64(),
+  files: t.array(draftFile), updatedBy: t.identity(), updatedAt: t.timestamp(),
+});
+const generationDeadline = table({ name: 'generation_deadline' }, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), jobId: t.u64() });
+const modelUsage = table({ name: 'model_usage' }, { identity: t.identity().primaryKey(), windowStart: t.timestamp(), requests: t.u32() });
+const db = schema({ project, userProfile, organization, membership, workspaceProject, projectAccess, invitation, legacyTransfer, projectGuidance, projectReference, generationJob, componentDraft, modelUsage, generationDeadline }, {
+  env: { AUTH_ISSUER: t.string().optional(), AUTH_CLIENT_ID: t.string().optional(), GENERATION_MODE: t.string().optional(), NVIDIA_ENABLED: t.string().optional(), NVIDIA_API_KEY: t.string().optional(), NVIDIA_MODEL: t.string().optional(), GEMINI_API_KEY: t.string().optional(), GEMINI_MODEL: t.string().optional() },
 });
 export default db;
 type Ctx = ReducerCtx<InferSchema<typeof db>>;
@@ -87,9 +109,6 @@ function canManageProject(ctx: Ctx | ReadCtx, row: ProjectRow, who: Identity) {
 }
 function permission(ctx: Ctx | ReadCtx, row: ProjectRow, who: Identity) {
   if (canManageProject(ctx, row, who)) return 'editor';
-  if (!row.organizationId || !role(ctx, row.organizationId, who)) return '';
-  // Personal projects require their owner to remain in the sharing organization.
-  if (row.ownership === 'personal' && !role(ctx, row.organizationId, row.createdBy)) return '';
   return ctx.db.projectAccess.key.find(key(row.id, who))?.role ?? '';
 }
 function accessibleProjects(ctx: Ctx | ReadCtx) {
@@ -112,6 +131,7 @@ export const registerProfile = db.reducer(ctx => {
   const row = { identity: ctx.sender, ...data };
   if (ctx.db.userProfile.identity.find(ctx.sender)) ctx.db.userProfile.identity.update(row);
   else ctx.db.userProfile.insert(row);
+  for (const target of accessibleProjects(ctx)) expireStaleGenerations(ctx, target.id);
 });
 // Admission protects subscriptions as well as mutations. Legacy holders retain only
 // their old read/transfer path; they cannot acquire organization permissions.
@@ -124,6 +144,12 @@ export const createOrganization = db.reducer({ name: t.string() }, (ctx, args) =
   user(ctx);
   const org = ctx.db.organization.insert({ id: 0n, name: name(args.name), owner: ctx.sender });
   ctx.db.membership.insert({ key: key(org.id, ctx.sender), organizationId: org.id, user: ctx.sender, role: 'owner' });
+});
+export const renameOrganization = db.reducer({ organizationId: t.u64(), name: t.string() }, (ctx, args) => {
+  manager(ctx, args.organizationId);
+  const row = ctx.db.organization.id.find(args.organizationId);
+  if (!row) denied();
+  ctx.db.organization.id.update({ ...row, name: name(args.name) });
 });
 // Compatibility entry for older preset clients. New UI uses open-ended createProjectWithDetails.
 export const createProject = db.reducer({ organizationId: t.u64(), name: t.string(), outputStack: t.string() }, (ctx, args) => {
@@ -190,7 +216,7 @@ export const inviteMember = db.reducer({ organizationId: t.u64(), email: t.strin
   if (!['member', 'admin'].includes(args.role) || (args.role === 'admin' && callerRole !== 'owner')) denied();
   if (!['', 'viewer', 'editor'].includes(args.projectRole)) denied();
   const targetEmail = email(args.email);
-  const targetProject = args.projectId ? ctx.db.workspaceProject.id.find(args.projectId) : undefined;
+  const targetProject = args.projectRole && args.projectId ? ctx.db.workspaceProject.id.find(args.projectId) : undefined;
   if (args.projectRole && (!targetProject || targetProject.organizationId !== args.organizationId || !canManageProject(ctx, targetProject, ctx.sender))) throw new SenderError('Choose a project you manage in this organization.');
   if ([...ctx.db.invitation.organizationId.filter(args.organizationId)].some(row => row.email === targetEmail && row.expiresAt.microsSinceUnixEpoch > ctx.timestamp.microsSinceUnixEpoch)) {
     throw new SenderError('An active invitation already exists for this email.');
@@ -199,23 +225,55 @@ export const inviteMember = db.reducer({ organizationId: t.u64(), email: t.strin
     projectId: targetProject?.id ?? 0n, projectRole: args.projectRole,
     expiresAt: new Timestamp(ctx.timestamp.microsSinceUnixEpoch + 7n * 24n * 60n * 60n * 1000000n) });
 });
+export const inviteProject = db.reducer({ projectId: t.u64(), email: t.string(), projectRole: t.string() }, (ctx, args) => {
+  user(ctx);
+  const target = ctx.db.workspaceProject.id.find(args.projectId);
+  if (!target || !canManageProject(ctx, target, ctx.sender) || !['viewer', 'editor'].includes(args.projectRole)) denied();
+  const targetEmail = email(args.email);
+  if ([...ctx.db.invitation.iter()].some(row => row.projectId === target.id && row.organizationId === 0n &&
+    row.email === targetEmail && row.expiresAt.microsSinceUnixEpoch > ctx.timestamp.microsSinceUnixEpoch)) {
+    throw new SenderError('An active project invitation already exists for this email.');
+  }
+  ctx.db.invitation.insert({ id: 0n, organizationId: 0n, email: targetEmail, role: '', projectId: target.id, projectRole: args.projectRole,
+    expiresAt: new Timestamp(ctx.timestamp.microsSinceUnixEpoch + 7n * 24n * 60n * 60n * 1000000n) });
+});
 export const acceptInvitation = db.reducer({ invitationId: t.u64() }, (ctx, args) => {
   const profile = user(ctx);
   const row = ctx.db.invitation.id.find(args.invitationId);
   if (!row || row.email !== profile.email || row.expiresAt.microsSinceUnixEpoch <= ctx.timestamp.microsSinceUnixEpoch) denied();
+  if (!row.organizationId) {
+    const target = ctx.db.workspaceProject.id.find(row.projectId);
+    if (!target || !['viewer', 'editor'].includes(row.projectRole)) denied();
+    const grantKey = key(target.id, ctx.sender);
+    const grant = ctx.db.projectAccess.key.find(grantKey);
+    if (grant) throw new SenderError('You already have access to this project.');
+    ctx.db.projectAccess.insert({ key: grantKey, projectId: target.id, user: ctx.sender, role: row.projectRole });
+    ctx.db.invitation.id.delete(row.id);
+    return;
+  }
   const memberKey = key(row.organizationId, ctx.sender);
   if (ctx.db.membership.key.find(memberKey)) throw new SenderError('You are already a member.');
   ctx.db.membership.insert({ key: memberKey, organizationId: row.organizationId, user: ctx.sender, role: row.role });
   if (row.projectRole) {
     const target = ctx.db.workspaceProject.id.find(row.projectId);
     if (!target || target.organizationId !== row.organizationId) denied();
-    ctx.db.projectAccess.insert({ key: key(target.id, ctx.sender), projectId: target.id, user: ctx.sender, role: row.projectRole });
+    const grantKey = key(target.id, ctx.sender);
+    const grant = ctx.db.projectAccess.key.find(grantKey);
+    if (grant) ctx.db.projectAccess.key.update({ ...grant, role: row.projectRole });
+    else ctx.db.projectAccess.insert({ key: grantKey, projectId: target.id, user: ctx.sender, role: row.projectRole });
   }
   ctx.db.invitation.id.delete(row.id);
 });
 export const revokeInvitation = db.reducer({ invitationId: t.u64() }, (ctx, args) => {
   const row = ctx.db.invitation.id.find(args.invitationId);
   if (!row) denied();
+  if (!row.organizationId) {
+    const target = ctx.db.workspaceProject.id.find(row.projectId);
+    user(ctx);
+    if (!target || !canManageProject(ctx, target, ctx.sender)) denied();
+    ctx.db.invitation.id.delete(row.id);
+    return;
+  }
   const callerRole = manager(ctx, row.organizationId);
   if (row.role === 'admin' && callerRole !== 'owner') denied();
   ctx.db.invitation.id.delete(row.id);
@@ -224,8 +282,7 @@ export const setProjectAccess = db.reducer({ projectId: t.u64(), member: t.ident
   const row = ctx.db.workspaceProject.id.find(args.projectId);
   if (!row) denied();
   user(ctx);
-  if (!canManageProject(ctx, row, ctx.sender) || !row.organizationId || !role(ctx, row.organizationId, ctx.sender) ||
-      !role(ctx, row.organizationId, args.member) || !['', 'viewer', 'editor'].includes(args.role)) denied();
+  if (!canManageProject(ctx, row, ctx.sender) || !['', 'viewer', 'editor'].includes(args.role)) denied();
   if (projectOwner(ctx, row)?.isEqual(args.member)) throw new SenderError('Project owner access cannot be changed.');
   const grantKey = key(row.id, args.member);
   const grant = ctx.db.projectAccess.key.find(grantKey);
@@ -248,8 +305,13 @@ export const removeMember = db.reducer({ organizationId: t.u64(), member: t.iden
 });
 function clearProjectSharing(ctx: Ctx, target: ProjectRow) {
   for (const grant of ctx.db.projectAccess.projectId.filter(target.id)) ctx.db.projectAccess.key.delete(grant.key);
-  for (const invite of ctx.db.invitation.organizationId.filter(target.organizationId)) {
-    if (invite.projectId === target.id) ctx.db.invitation.id.update({ ...invite, projectId: 0n, projectRole: '' });
+  for (const invite of ctx.db.invitation.iter()) {
+    if (invite.projectId !== target.id) continue;
+    if (target.organizationId && invite.organizationId === target.organizationId) {
+      ctx.db.invitation.id.update({ ...invite, projectId: 0n, projectRole: '' });
+    } else {
+      ctx.db.invitation.id.delete(invite.id);
+    }
   }
 }
 function removeMembership(ctx: Ctx, org: bigint, member: Identity) {
@@ -309,9 +371,13 @@ export const visibleProjects = db.view({ name: 'visible_projects', public: true 
   accessibleProjects(ctx).map(row => ({ ...row,
     ...(row.framework || !row.outputStack ? {} : presetDetails(row.outputStack)),
     owner: projectOwner(ctx, row)!, canManage: canManageProject(ctx, row, ctx.sender), permission: permission(ctx, row, ctx.sender) })));
-const shareSummary = t.object('ProjectShareSummary', { key: t.string(), projectId: t.u64(), user: t.identity(), role: t.string() });
+const shareSummary = t.object('ProjectShareSummary', { key: t.string(), projectId: t.u64(), user: t.identity(), role: t.string(), name: t.string(), email: t.string() });
 export const managedProjectShares = db.view({ name: 'managed_project_shares', public: true }, t.array(shareSummary), ctx =>
-  accessibleProjects(ctx).filter(row => canManageProject(ctx, row, ctx.sender)).flatMap(row => [...ctx.db.projectAccess.projectId.filter(row.id)]));
+  accessibleProjects(ctx).filter(row => canManageProject(ctx, row, ctx.sender)).flatMap(row =>
+    [...ctx.db.projectAccess.projectId.filter(row.id)].map(grant => {
+      const profile = ctx.db.userProfile.identity.find(grant.user);
+      return { ...grant, name: profile?.name ?? 'Project collaborator', email: profile?.email ?? '' };
+    })));
 const memberSummary = t.object('MemberSummary', {
   key: t.string(), organizationId: t.u64(), user: t.identity(), name: t.string(), email: t.string(), role: t.string(), projectRole: t.string(),
 });
@@ -326,18 +392,230 @@ export const organizationMembers = db.view({ name: 'organization_members', publi
     });
   }));
 const invitationSummary = t.object('InvitationSummary', {
-  id: t.u64(), organizationId: t.u64(), organizationName: t.string(), email: t.string(), role: t.string(), projectRole: t.string(), expiresAt: t.timestamp(),
+  id: t.u64(), organizationId: t.u64(), projectId: t.u64(), organizationName: t.string(), projectName: t.string(), email: t.string(), role: t.string(), projectRole: t.string(), expiresAt: t.timestamp(),
 });
 export const myInvitations = db.view({ name: 'my_invitations', public: true }, t.array(invitationSummary), ctx => {
   const profile = ctx.db.userProfile.identity.find(ctx.sender);
   if (!profile) return [];
-  const rows = new Map<bigint, { id: bigint; organizationId: bigint; organizationName: string; email: string; role: string; projectRole: string; expiresAt: Timestamp }>();
-  const add = (row: { id: bigint; organizationId: bigint; email: string; role: string; projectRole: string; expiresAt: Timestamp }) => {
-    rows.set(row.id, { ...row, organizationName: ctx.db.organization.id.find(row.organizationId)?.name ?? 'Organization' });
+  const rows = new Map<bigint, { id: bigint; organizationId: bigint; projectId: bigint; organizationName: string; projectName: string; email: string; role: string; projectRole: string; expiresAt: Timestamp }>();
+  const add = (row: { id: bigint; organizationId: bigint; projectId: bigint; email: string; role: string; projectRole: string; expiresAt: Timestamp }) => {
+    rows.set(row.id, { ...row, organizationName: row.organizationId ? ctx.db.organization.id.find(row.organizationId)?.name ?? 'Organization' : '',
+      projectName: row.projectId ? ctx.db.workspaceProject.id.find(row.projectId)?.name ?? 'Project' : '' });
   };
   for (const row of ctx.db.invitation.email.filter(profile.email)) add(row);
   for (const member of ctx.db.membership.user.filter(ctx.sender)) {
     if (member.role === 'owner' || member.role === 'admin') for (const row of ctx.db.invitation.organizationId.filter(member.organizationId)) add(row);
   }
+  for (const target of accessibleProjects(ctx).filter(row => canManageProject(ctx, row, ctx.sender))) {
+    for (const row of ctx.db.invitation.iter()) if (row.projectId === target.id && !row.organizationId) add(row);
+  }
   return [...rows.values()];
+});
+
+export const uploadReference = db.reducer({ projectId: t.u64(), filename: t.string(), purpose: t.string(), bytes: t.array(t.u8()) }, (ctx, args) => {
+  user(ctx);
+  const target = ctx.db.workspaceProject.id.find(args.projectId);
+  if (!target || permission(ctx, target, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
+  let content: string;
+  try { content = validateReferenceFile(args.filename, new Uint8Array(args.bytes), args.purpose); }
+  catch (cause) { throw new SenderError(cause instanceof Error ? cause.message : 'Invalid reference file.'); }
+  const existing = [...ctx.db.projectReference.projectId.filter(target.id)];
+  if (existing.length >= MAX_PROJECT_REFERENCES) throw new SenderError('This project already has 20 references.');
+  if (existing.some(row => row.filename.toLowerCase() === args.filename.toLowerCase())) throw new SenderError('A reference with this filename already exists. Remove it first or use a different filename.');
+  ctx.db.projectReference.insert({ id: 0n, ...args, content, uploadedBy: ctx.sender, createdAt: ctx.timestamp });
+});
+export const removeReference = db.reducer({ referenceId: t.u64() }, (ctx, args) => {
+  user(ctx);
+  const row = ctx.db.projectReference.id.find(args.referenceId);
+  const target = row ? ctx.db.workspaceProject.id.find(row.projectId) : undefined;
+  if (!row || !target || permission(ctx, target, ctx.sender) !== 'editor') throw new SenderError('Reference not found or access denied.');
+  ctx.db.projectReference.id.delete(row.id);
+});
+export const visibleReferences = db.view({ name: 'visible_references', public: true }, t.array(projectReference.rowType), ctx =>
+  accessibleProjects(ctx).flatMap(target => [...ctx.db.projectReference.projectId.filter(target.id)]));
+
+function generationFingerprint(ctx: Ctx | ReadCtx, projectId: bigint) {
+  const target = ctx.db.workspaceProject.id.find(projectId)!;
+  const guidance = ctx.db.projectGuidance.projectId.find(projectId);
+  const refs = [...ctx.db.projectReference.projectId.filter(projectId)].map(row => row.id.toString()).sort();
+  return JSON.stringify([target.name, target.revision.toString(), guidance?.revision.toString() ?? '0', refs]);
+}
+type GenerationArgs = { projectId: bigint; requestId: string; request: string; referenceIds: bigint[]; scenario: string; sourceJobId?: bigint; expectedDraftRevision?: bigint };
+function queueGeneration(ctx: Ctx, args: GenerationArgs, mode = 'mock', secret = '', model = '') {
+  user(ctx);
+  const project = ctx.db.workspaceProject.id.find(args.projectId);
+  if (!project || permission(ctx, project, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
+  if (mode === 'mock' ? ctx.env.GENERATION_MODE !== 'mock' : ctx.env.NVIDIA_ENABLED !== 'true') throw new SenderError('Generation providers are not configured.');
+  if (!/^[a-zA-Z0-9-]{16,80}$/.test(args.requestId) || !args.request.trim() || args.request.length > 4000 || !['success', 'generation_failure', 'build_failure'].includes(args.scenario)) throw new SenderError('Provide a valid generation request and mock scenario.');
+  const replay = ctx.db.generationJob.requestId.find(args.requestId);
+  if (replay) {
+    if (replay.projectId !== args.projectId || !replay.requestedBy.isEqual(ctx.sender) || replay.request !== args.request.trim() || replay.scenario !== args.scenario || replay.mode !== mode || replay.model !== model || (JSON.parse(replay.snapshot).requestedSourceJobId ?? '') !== (args.sourceJobId?.toString() ?? '')) denied();
+    return replay;
+  }
+  expireStaleGenerations(ctx, project.id);
+  const history = [...ctx.db.generationJob.projectId.filter(project.id)];
+  if (history.some(row => !['preview_ready', 'draft_ready', 'failed', 'cancelled'].includes(row.state))) throw new SenderError('This project already has an active generation job.');
+  if (history.length >= MAX_GENERATION_HISTORY) throw new SenderError('Generation history limit reached for this prototype.');
+  if (args.referenceIds.length > MAX_PROJECT_REFERENCES || new Set(args.referenceIds).size !== args.referenceIds.length) throw new SenderError('Choose references from this project only.');
+  const references = args.referenceIds.map(id => {
+    const row = ctx.db.projectReference.id.find(id);
+    if (!row || row.projectId !== project.id) throw new SenderError('Choose references from this project only.');
+    return { id: row.id.toString(), filename: row.filename, purpose: row.purpose, content: row.content };
+  });
+  const conversation = isChatMode(mode) ? history.filter(row => isChatMode(row.mode) && row.state === 'draft_ready').sort((a, b) => a.id < b.id ? -1 : 1).slice(-6).map(row => {
+    let reply = ''; try { reply = JSON.parse(row.artifacts).reply ?? ''; } catch { /* Legacy draft. */ }
+    return { request: row.request, reply: reply.slice(0, 2000) };
+  }) : [];
+  const latest = history.filter(row => isChatMode(row.mode) && row.state === 'draft_ready').sort((a, b) => a.id > b.id ? -1 : 1).find(row => { try { return JSON.parse(row.artifacts).files?.length > 0; } catch { return false; } });
+  const source = args.sourceJobId !== undefined ? ctx.db.generationJob.id.find(args.sourceJobId) : latest;
+  if (args.sourceJobId !== undefined && (!source || source.projectId !== project.id || source.state !== 'draft_ready' || !isChatMode(source.mode) || !JSON.parse(source.artifacts).files?.length)) throw new SenderError('Selected draft is unavailable. Select a saved draft from this project.');
+  const edited = source ? ctx.db.componentDraft.jobId.find(source.id) : undefined;
+  if (args.sourceJobId !== undefined && (edited?.revision ?? 0n) !== args.expectedDraftRevision) throw new SenderError('Draft changed. Review the latest saved version before sending.');
+  const candidateFiles = isChatMode(mode) && source ? edited?.files ?? JSON.parse(source.artifacts).files : [];
+  const editing = isChatMode(mode) && source ? { jobId: source.id.toString(), revision: (edited?.revision ?? 0n).toString() } : undefined;
+  const technologies = project.framework || !project.outputStack ? project : { ...project, ...presetDetails(project.outputStack) };
+  const guidance = ctx.db.projectGuidance.projectId.find(project.id);
+  const snapshot = JSON.stringify({ conversation, candidateFiles, editing, requestedSourceJobId: args.sourceJobId?.toString() ?? '', technologies: { name: project.name, framework: technologies.framework, language: technologies.language, styling: technologies.styling, libraries: technologies.libraries, versions: technologies.versions },
+    guidance: guidance ? { audience: guidance.audience, technical: guidance.technical, style: guidance.style, colors: guidance.colors, typography: guidance.typography, spacing: guidance.spacing, accessibility: guidance.accessibility, guidance: guidance.guidance } : {}, references, request: args.request.trim() });
+  if (new TextEncoder().encode(snapshot).length > 65536) throw new SenderError('Selected generation context exceeds 64 KiB. Choose fewer references.');
+  if (secret && snapshot.includes(secret)) throw new SenderError('Remove credentials from the request or project context.');
+  if (isChatMode(mode)) {
+    const usage = ctx.db.modelUsage.identity.find(ctx.sender);
+    const withinWindow = usage && ctx.timestamp.microsSinceUnixEpoch - usage.windowStart.microsSinceUnixEpoch < 60000000n;
+    if (withinWindow && usage.requests >= 5) throw new SenderError('Chat limit reached. Wait a minute before sending another message.');
+    const next = { identity: ctx.sender, windowStart: withinWindow ? usage.windowStart : ctx.timestamp, requests: withinWindow ? usage.requests + 1 : 1 };
+    if (usage) ctx.db.modelUsage.identity.update(next); else ctx.db.modelUsage.insert(next);
+  }
+  const inserted = ctx.db.generationJob.insert({ id: 0n, requestId: args.requestId, projectId: project.id, requestedBy: ctx.sender, request: args.request.trim(),
+    state: 'queued', mode, model, scenario: args.scenario, snapshot, fingerprint: generationFingerprint(ctx, project.id), artifacts: '', diagnostic: '', createdAt: ctx.timestamp });
+  if (isChatMode(mode)) ctx.db.generationDeadline.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + 90000000n), jobId: inserted.id });
+  return inserted;
+}
+export const saveComponentDraft = db.reducer({ jobId: t.u64(), expectedRevision: t.u64(), files: t.array(draftFile) }, (ctx, args) => {
+  user(ctx);
+  const job = ctx.db.generationJob.id.find(args.jobId);
+  const project = job ? ctx.db.workspaceProject.id.find(job.projectId) : undefined;
+  if (!job || !project || permission(ctx, project, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
+  if (!isChatMode(job.mode) || job.state !== 'draft_ready' || !JSON.parse(job.artifacts).files?.length) throw new SenderError('Only generated code drafts can be edited.');
+  const current = ctx.db.componentDraft.jobId.find(job.id);
+  if ((current?.revision ?? 0n) !== args.expectedRevision) throw new SenderError('Draft changed. Your local edits were not overwritten.');
+  let files;
+  try { files = validateDraftFiles(args.files); }
+  catch (cause) { throw new SenderError(cause instanceof Error ? cause.message : 'Invalid draft files.'); }
+  const secrets = [ctx.env.NVIDIA_API_KEY?.trim(), ctx.env.GEMINI_API_KEY?.trim()];
+  if (secrets.some(secret => secret && JSON.stringify(files).includes(secret))) throw new SenderError('Remove credentials from draft files.');
+  const row = { jobId: job.id, projectId: job.projectId, revision: args.expectedRevision + 1n, files, updatedBy: ctx.sender, updatedAt: ctx.timestamp };
+  if (current) ctx.db.componentDraft.jobId.update(row); else ctx.db.componentDraft.insert(row);
+});
+export const visibleComponentDrafts = db.view({ name: 'visible_component_drafts', public: true }, t.array(componentDraft.rowType), ctx =>
+  accessibleProjects(ctx).flatMap(project => [...ctx.db.componentDraft.projectId.filter(project.id)]));
+function draftInputsCurrent(ctx: Ctx, snapshot: string) {
+  const editing = JSON.parse(snapshot).editing;
+  if (!editing) return true;
+  const source = ctx.db.generationJob.id.find(BigInt(editing.jobId));
+  return !!source && (ctx.db.componentDraft.jobId.find(source.id)?.revision ?? 0n).toString() === editing.revision;
+}
+export const createGeneration = db.reducer({ projectId: t.u64(), requestId: t.string(), request: t.string(), referenceIds: t.array(t.u64()), scenario: t.string() }, (ctx, args) => { queueGeneration(ctx, args); });
+export const advanceMockGeneration = db.reducer({ jobId: t.u64(), expectedState: t.string() }, (ctx, args) => {
+  user(ctx);
+  const job = ctx.db.generationJob.id.find(args.jobId);
+  const project = job ? ctx.db.workspaceProject.id.find(job.projectId) : undefined;
+  if (!job || !project || permission(ctx, project, ctx.sender) !== 'editor') denied();
+  if (ctx.env.GENERATION_MODE !== 'mock' || job.mode !== 'mock') denied();
+  if (['preview_ready', 'draft_ready', 'failed', 'cancelled'].includes(job.state)) return;
+  if (job.state !== args.expectedState) return; // Idempotent resume across tabs/retries.
+  if (job.fingerprint !== generationFingerprint(ctx, project.id)) {
+    ctx.db.generationJob.id.update({ ...job, state: 'failed', diagnostic: 'Project inputs changed. Start a new job with the latest context.' }); return;
+  }
+  if ((job.state === 'generating' && job.scenario === 'generation_failure') || (job.state === 'building' && job.scenario === 'build_failure')) {
+    ctx.db.generationJob.id.update({ ...job, state: 'failed', diagnostic: 'Simulated provider/build failure. Existing working content was not changed.' }); return;
+  }
+  const index = generationStages.indexOf(job.state as typeof generationStages[number]);
+  if (index < 0) denied();
+  const state = generationStages[index + 1];
+  ctx.db.generationJob.id.update({ ...job, state, artifacts: state === 'preview_ready' ? mockArtifacts : job.artifacts,
+    diagnostic: state === 'preview_ready' ? 'Mock checks only. No compiler, AI provider or hosted sandbox was executed. Not promoted to current.' : '' });
+});
+export const cancelGeneration = db.reducer({ jobId: t.u64() }, (ctx, args) => {
+  user(ctx);
+  const job = ctx.db.generationJob.id.find(args.jobId);
+  const project = job ? ctx.db.workspaceProject.id.find(job.projectId) : undefined;
+  if (!job || !project || permission(ctx, project, ctx.sender) !== 'editor') denied();
+  if (!['preview_ready', 'draft_ready', 'failed', 'cancelled'].includes(job.state)) ctx.db.generationJob.id.update({ ...job, state: 'cancelled', diagnostic: 'Cancelled. Existing working content was not changed.' });
+});
+export const visibleGenerationJobs = db.view({ name: 'visible_generation_jobs', public: true }, t.array(generationJob.rowType), ctx =>
+  accessibleProjects(ctx).flatMap(project => [...ctx.db.generationJob.projectId.filter(project.id)]));
+const generationConfiguration = t.object('GenerationConfiguration', { mode: t.string(), nvidiaEnabled: t.bool(), chatEnabled: t.bool() });
+export const generationSettings = db.view({ name: 'generation_settings', public: true }, t.array(generationConfiguration), ctx => [{ mode: ctx.env.GENERATION_MODE === 'mock' ? 'mock' : 'unconfigured', nvidiaEnabled: ctx.env.NVIDIA_ENABLED === 'true' && !!ctx.env.NVIDIA_API_KEY?.trim(), chatEnabled: ctx.env.NVIDIA_ENABLED === 'true' && !!ctx.env.NVIDIA_API_KEY?.trim() && !!ctx.env.GEMINI_API_KEY?.trim() && /^gemini-[a-z0-9.-]+$/.test(ctx.env.GEMINI_MODEL?.trim() || GEMINI_MODEL) }]);
+
+export const removeGeneration = db.reducer({ jobId: t.u64() }, (ctx, args) => {
+  user(ctx);
+  const job = ctx.db.generationJob.id.find(args.jobId);
+  const project = job ? ctx.db.workspaceProject.id.find(job.projectId) : undefined;
+  if (!job || !project || permission(ctx, project, ctx.sender) !== 'editor') denied();
+  if (!['preview_ready', 'draft_ready', 'failed', 'cancelled'].includes(job.state)) throw new SenderError('Cancel the active job before deleting it.');
+  ctx.db.componentDraft.jobId.delete(job.id);
+  ctx.db.generationJob.id.delete(job.id);
+});
+
+export const generateProjectChat = db.procedure({ projectId: t.u64(), requestId: t.string(), request: t.string(), referenceIds: t.array(t.u64()), sourceJobId: t.option(t.u64()), expectedDraftRevision: t.option(t.u64()) }, t.unit(), (ctx, args) => {
+  const claim = ctx.withTx(tx => {
+    user(tx);
+    const target = tx.db.workspaceProject.id.find(args.projectId);
+    if (!target || permission(tx, target, tx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
+    const geminiKey = tx.env.GEMINI_API_KEY?.trim() ?? '';
+    const geminiModel = tx.env.GEMINI_MODEL?.trim() || GEMINI_MODEL;
+    const nvidiaKey = tx.env.NVIDIA_API_KEY?.trim() ?? '';
+    const nvidiaModel = tx.env.NVIDIA_MODEL?.trim() || NVIDIA_MODEL;
+    if ([geminiKey, nvidiaKey].some(key => key.length < 16 || key.length > 512 || /\s/.test(key)) || !/^gemini-[a-z0-9.-]+$/.test(geminiModel) || geminiModel.length > 120 || !/^nvidia\/[a-z0-9.-]*nemotron[a-z0-9.-]*$/.test(nvidiaModel)) throw new SenderError('ComPlix chat is not configured. Contact the operator.');
+    const job = queueGeneration(tx, { ...args, scenario: 'success' }, 'gemini', nvidiaKey, geminiModel);
+    if (job.snapshot.includes(geminiKey)) throw new SenderError('Remove credentials from the request or project context.');
+    const call = job.state === 'queued';
+    if (call) tx.db.generationJob.id.update({ ...job, state: 'generating' });
+    return { id: job.id, snapshot: job.snapshot, call, geminiKey, geminiModel, nvidiaKey, nvidiaModel };
+  });
+  if (!claim.call) return {};
+  let artifacts = ''; let diagnostic = '';
+  try {
+    artifacts = runComponentChat(claim, (url, body, key, timeoutMs) => {
+      const response = ctx.http.fetch(url, { method: 'POST', timeout: new TimeDuration(BigInt(timeoutMs) * 1000n),
+        headers: { 'Content-Type': 'application/json', ...(url.startsWith('https://generativelanguage.googleapis.com/') ? { 'x-goog-api-key': key } : { Authorization: 'Bearer ' + key }) }, body: JSON.stringify(body) });
+      return { status: response.status, body: response.status === 200 ? response.text() : '' };
+    }, () => ctx.withTx(tx => {
+      user(tx);
+      const job = tx.db.generationJob.id.find(claim.id);
+      const target = job ? tx.db.workspaceProject.id.find(job.projectId) : undefined;
+      if (!job || !target || permission(tx, target, tx.sender) !== 'editor' || !['generating', 'generating_code'].includes(job.state) || tx.timestamp.microsSinceUnixEpoch - job.createdAt.microsSinceUnixEpoch >= 90000000n || job.fingerprint !== generationFingerprint(tx, target.id) || !draftInputsCurrent(tx, job.snapshot)) throw new Error('Chat context changed or the request was cancelled. No further provider call was made.');
+      if (job.state === 'generating') tx.db.generationJob.id.update({ ...job, state: 'generating_code' });
+    }));
+  } catch (cause) {
+    // Error text from HTTP/runtime internals is never persisted.
+    const message = cause instanceof Error ? cause.message : '';
+    const safe = ['Gemini returned unusable output.', 'Gemini response was incomplete or blocked. No changes were saved.', 'Gemini requested an unsupported tool operation.', 'Gemini exceeded the generation tool limit.', 'Unsupported target stack: generation requires a matching adapter.', 'AI response contained credentials. No changes were saved.', 'Chat context changed or the request was cancelled. No further provider call was made.', 'Gemini rejected the model or request configuration.', 'Gemini rejected the operator configuration.', 'Gemini denied access.', 'Gemini rate or quota limit reached. Try later.', 'Gemini could not complete the request.', 'NVIDIA rejected the API key.', 'NVIDIA denied access to this model.', 'NVIDIA rate or quota limit reached. Try later.', 'NVIDIA could not complete the request.', 'NVIDIA rejected the model or request configuration.', 'NVIDIA deferred this request. No automatic retry was made.'];
+    diagnostic = safe.includes(message) ? message : 'AI coordination could not complete safely or timed out. No automatic retry was made.';
+  }
+  ctx.withTx(tx => {
+    user(tx);
+    const job = tx.db.generationJob.id.find(claim.id);
+    const target = job ? tx.db.workspaceProject.id.find(job.projectId) : undefined;
+    if (!job || !target || permission(tx, target, tx.sender) !== 'editor') denied();
+    if (!['generating', 'generating_code'].includes(job.state)) return;
+    const failure = tx.timestamp.microsSinceUnixEpoch - job.createdAt.microsSinceUnixEpoch >= 90000000n ? 'AI request exceeded its deadline. No automatic retry was made.' : job.fingerprint !== generationFingerprint(tx, target.id) || !draftInputsCurrent(tx, job.snapshot) ? 'Draft or project inputs changed during coordination. Your edits were preserved.' : diagnostic;
+    tx.db.generationJob.id.update({ ...job, state: failure ? 'failed' : 'draft_ready', artifacts: failure ? '' : artifacts,
+      diagnostic: failure || 'Gemini coordinated this unverified draft. No compiler, sandbox, tests or executable preview have run. Not promoted to current.' });
+  });
+  return {};
+});
+
+function expireStaleGenerations(ctx: Ctx, projectId: bigint) {
+  for (const job of ctx.db.generationJob.projectId.filter(projectId)) {
+    if (isChatMode(job.mode) && ['queued', 'generating', 'generating_code'].includes(job.state) && ctx.timestamp.microsSinceUnixEpoch - job.createdAt.microsSinceUnixEpoch >= 90000000n) {
+      ctx.db.generationJob.id.update({ ...job, state: 'failed', diagnostic: 'AI request exceeded its deadline. No automatic retry was made. You can send a new message.' });
+    }
+  }
+}
+// onSchedule callbacks are private to the scheduler/database owner, not callable by app clients.
+export const expireGeneration = db.reducer({ onSchedule: generationDeadline }, { timer: generationDeadline.rowType }, (ctx, { timer }) => {
+  const job = ctx.db.generationJob.id.find(timer.jobId);
+  if (job && isChatMode(job.mode) && ['queued', 'generating', 'generating_code'].includes(job.state)) ctx.db.generationJob.id.update({ ...job, state: 'failed', diagnostic: 'AI request exceeded its deadline. No automatic retry was made. You can send a new message.' });
 });

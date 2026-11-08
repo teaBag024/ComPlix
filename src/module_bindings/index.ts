@@ -35,39 +35,60 @@ import {
 
 // Import all reducer arg schemas
 import AcceptInvitationReducer from "./accept_invitation_reducer";
+import AdvanceMockGenerationReducer from "./advance_mock_generation_reducer";
+import CancelGenerationReducer from "./cancel_generation_reducer";
+import CreateGenerationReducer from "./create_generation_reducer";
 import CreateOrganizationReducer from "./create_organization_reducer";
 import CreateProjectReducer from "./create_project_reducer";
 import CreateProjectWithDetailsReducer from "./create_project_with_details_reducer";
 import ImportLegacyProjectReducer from "./import_legacy_project_reducer";
 import InviteMemberReducer from "./invite_member_reducer";
+import InviteProjectReducer from "./invite_project_reducer";
 import LeaveOrganizationReducer from "./leave_organization_reducer";
 import PrepareLegacyTransferReducer from "./prepare_legacy_transfer_reducer";
 import RegisterProfileReducer from "./register_profile_reducer";
+import RemoveGenerationReducer from "./remove_generation_reducer";
 import RemoveMemberReducer from "./remove_member_reducer";
+import RemoveReferenceReducer from "./remove_reference_reducer";
+import RenameOrganizationReducer from "./rename_organization_reducer";
 import RenameProjectReducer from "./rename_project_reducer";
 import RevokeInvitationReducer from "./revoke_invitation_reducer";
+import SaveComponentDraftReducer from "./save_component_draft_reducer";
 import SaveGuidanceReducer from "./save_guidance_reducer";
 import SetMemberRoleReducer from "./set_member_role_reducer";
 import SetProjectAccessReducer from "./set_project_access_reducer";
 import SetProjectOrganizationReducer from "./set_project_organization_reducer";
 import UpdateProjectDetailsReducer from "./update_project_details_reducer";
+import UploadReferenceReducer from "./upload_reference_reducer";
 
 // Import all procedure arg schemas
+import * as GenerateProjectChatProcedure from "./generate_project_chat_procedure";
 
 // Import all table schema definitions
+import GenerationSettingsRow from "./generation_settings_table";
 import ManagedProjectSharesRow from "./managed_project_shares_table";
 import MyInvitationsRow from "./my_invitations_table";
 import MyOrganizationsRow from "./my_organizations_table";
 import MyProfileRow from "./my_profile_table";
 import MyProjectRow from "./my_project_table";
 import OrganizationMembersRow from "./organization_members_table";
+import VisibleComponentDraftsRow from "./visible_component_drafts_table";
+import VisibleGenerationJobsRow from "./visible_generation_jobs_table";
 import VisibleGuidanceRow from "./visible_guidance_table";
 import VisibleProjectsRow from "./visible_projects_table";
+import VisibleReferencesRow from "./visible_references_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  generationSettings: __table({
+    name: 'generation_settings',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, GenerationSettingsRow),
   managedProjectShares: __table({
     name: 'managed_project_shares',
     indexes: [
@@ -110,6 +131,20 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, OrganizationMembersRow),
+  visibleComponentDrafts: __table({
+    name: 'visible_component_drafts',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleComponentDraftsRow),
+  visibleGenerationJobs: __table({
+    name: 'visible_generation_jobs',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleGenerationJobsRow),
   visibleGuidance: __table({
     name: 'visible_guidance',
     indexes: [
@@ -124,31 +159,48 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleProjectsRow),
+  visibleReferences: __table({
+    name: 'visible_references',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleReferencesRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("accept_invitation", AcceptInvitationReducer),
+  __reducerSchema("advance_mock_generation", AdvanceMockGenerationReducer),
+  __reducerSchema("cancel_generation", CancelGenerationReducer),
+  __reducerSchema("create_generation", CreateGenerationReducer),
   __reducerSchema("create_organization", CreateOrganizationReducer),
   __reducerSchema("create_project", CreateProjectReducer),
   __reducerSchema("create_project_with_details", CreateProjectWithDetailsReducer),
   __reducerSchema("import_legacy_project", ImportLegacyProjectReducer),
   __reducerSchema("invite_member", InviteMemberReducer),
+  __reducerSchema("invite_project", InviteProjectReducer),
   __reducerSchema("leave_organization", LeaveOrganizationReducer),
   __reducerSchema("prepare_legacy_transfer", PrepareLegacyTransferReducer),
   __reducerSchema("register_profile", RegisterProfileReducer),
+  __reducerSchema("remove_generation", RemoveGenerationReducer),
   __reducerSchema("remove_member", RemoveMemberReducer),
+  __reducerSchema("remove_reference", RemoveReferenceReducer),
+  __reducerSchema("rename_organization", RenameOrganizationReducer),
   __reducerSchema("rename_project", RenameProjectReducer),
   __reducerSchema("revoke_invitation", RevokeInvitationReducer),
+  __reducerSchema("save_component_draft", SaveComponentDraftReducer),
   __reducerSchema("save_guidance", SaveGuidanceReducer),
   __reducerSchema("set_member_role", SetMemberRoleReducer),
   __reducerSchema("set_project_access", SetProjectAccessReducer),
   __reducerSchema("set_project_organization", SetProjectOrganizationReducer),
   __reducerSchema("update_project_details", UpdateProjectDetailsReducer),
+  __reducerSchema("upload_reference", UploadReferenceReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("generate_project_chat", GenerateProjectChatProcedure.params, GenerateProjectChatProcedure.returnType),
 );
 
 /** The remote SpacetimeDB module schema, both runtime and type information. */

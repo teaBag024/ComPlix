@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ComPlix. — UI/UX Design Style Guide (Light & Dark Themes)</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    /* ==========================================================================
+       LIGHT THEME TOKENS (Default — Organic Off-White, Sage & Forest Green)
+       ========================================================================== */
+    :root,
+    [data-theme="light"] {
+      --bg-backdrop: #EFF3F0;
+      --bg-canvas: #FAFBF9;
+      --bg-header: #FFFFFF;
+      --bg-surface: #F1F5F2;
+      --bg-elevated: #FFFFFF;
+      --bg-pill-muted: #E9EFEA;
+      --bg-pill-active: #D7E5DC;
+      --border-subtle: #E1E8E3;
+      --border-strong: #CBD6CE;
+      --brand-primary: #214E34;
+      --brand-hover: #183B27;
+      --brand-eyebrow: #355E46;
+      --focus-ring: #2B6E48;
+      --text-primary: #141A16;
+      --text-secondary: #4F5D54;
+      --text-muted: #76847B;
+      --text-on-brand: #FFFFFF;
+      --status-success-bg: #E3F3EA;
+      --status-success-text: #1D633B;
+      --status-warning-bg: #FEF3DF;
+      --status-warning-text: #92580A;
+      --status-danger-bg: #FDE8EC;
+      --status-danger-text: #B42339;
+    }
+
+    /* ==========================================================================
+       DARK THEME TOKENS (Deep Forest Slate & Mint Sage)
+       ========================================================================== */
+    [data-theme="dark"] {
+      --bg-backdrop: #090E0B;
+      --bg-canvas: #0E1511;
+      --bg-header: #121B16;
+      --bg-surface: #16211B;
+      --bg-elevated: #1C2A22;
+      --bg-pill-muted: #1E2D24;
+      --bg-pill-active: #284234;
+      --border-subtle: #26362D;
+      --border-strong: #374D40;
+      --brand-primary: #347B54;
+      --brand-hover: #419467;
+      --brand-eyebrow: #78B894;
+      --focus-ring: #52B788;
+      --text-primary: #F0F5F1;
+      --text-secondary: #9IABA1;
+      --text-secondary: #9CAEA2;
+      --text-muted: #6C7D72;
+      --text-on-brand: #FFFFFF;
+      --status-success-bg: rgba(46, 204, 113, 0.14);
+      --status-success-text: #6EE7A0;
+      --status-warning-bg: rgba(243, 156, 18, 0.15);
+      --status-warning-text: #F7B955;
+      --status-danger-bg: rgba(236, 59, 97, 0.15);
+      --status-danger-text: #F8718D;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-backdrop);
+      color: var(--text-primary);
+      line-height: 1.5;
+      padding: 32px 16px;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    /* Floating Print & Theme Action Bar (Hidden in PDF) */
+    .print-toolbar {
+      position: fixed;
+      top: 20px;
+      right: 24px;
+      z-index: 999;
+      display: flex;
+      gap: 10px;
+      background: var(--bg-header);
+      border: 1px solid var(--border-strong);
+      padding: 10px 14px;
+      border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.12);
+      align-items: center;
+    }
+
+    .print-toolbar span {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+    }
+
+    .btn-toolbar {
+      background: var(--bg-pill-muted);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      padding: 7px 12px;
+      border-radius: 7px;
+      font-weight: 500;
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+
+    .btn-print {
+      background: var(--brand-primary);
+      color: var(--text-on-brand);
+      border: none;
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-weight: 600;
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+
+    /* Page Sheet Container */
+    .page {
+      max-width: 940px;
+      margin: 0 auto 32px auto;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 48px;
+      page-break-after: always;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    /* Header Banner */
+    .doc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 22px;
+      margin-bottom: 26px;
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--brand-eyebrow);
+      margin-bottom: 6px;
+    }
+
+    h1 {
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      color: var(--text-primary);
+    }
+
+    .doc-meta {
+      text-align: right;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+      margin: 26px 0 12px 0;
+    }
+
+    h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 16px 0 8px 0;
+    }
+
+    p {
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    /* Info / Summary Cards (Matching Screenshot's 3-Card Row) */
+    .info-card-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    .info-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .info-card-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .info-card-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    /* Dual-Theme Swatch Grid */
+    .theme-comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .theme-panel {
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .theme-panel.light-sample {
+      background: #FAFBF9;
+      color: #141A16;
+      border-color: #E1E8E3;
+    }
+
+    .theme-panel.dark-sample {
+      background: #0E1511;
+      color: #F0F5F1;
+      border-color: #26362D;
+    }
+
+    .swatch-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .mini-swatch {
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(128,128,128,0.2);
+      font-size: 11px;
+    }
+
+    .mini-color {
+      height: 32px;
+      width: 100%;
+    }
+
+    .mini-meta {
+      padding: 6px 8px;
+    }
+
+    .mini-name {
+      font-weight: 600;
+      font-size: 11px;
+    }
+
+    .mini-hex {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      opacity: 0.8;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 18px;
+      font-size: 12px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    th {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    td {
+      color: var(--text-secondary);
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      background: var(--bg-pill-muted);
+      color: var(--brand-eyebrow);
+      padding: 2px 6px;
+      border-radius: 5px;
+    }
+
+    /* Badges & Soft Pills */
+    .badge {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .badge-private {
+      background: var(--bg-pill-muted);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .badge-shared {
+      background: var(--bg-pill-active);
+      color: var(--brand-eyebrow);
+      border: 1px solid var(--border-strong);
+    }
+
+    .badge-stack {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+    }
+
+    .badge-warning {
+      background: var(--status-warning-bg);
+      color: var(--status-warning-text);
+    }
+
+    .badge-success {
+      background: var(--status-success-bg);
+      color: var(--status-success-text);
+    }
+
+    /* Component Preview Container */
+    .preview-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 18px;
+    }
+
+    /* ComPlix. Top Bar with Centered Soft Pill Navigation */
+    .mock-navbar {
+      height: 50px;
+      background: var(--bg-header);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      margin-bottom: 14px;
+    }
+
+    .mock-brand {
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .horiz-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-pill-btn {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-primary);
+      background: var(--bg-pill-muted);
+      border: 1px solid transparent;
+      padding: 6px 12px;
+      border-radius: 7px;
+    }
+
+    .nav-pill-btn.active {
+      background: var(--bg-pill-active);
+      border-color: var(--border-strong);
+      font-weight: 600;
+    }
+
+    .btn-forest {
+      background: var(--brand-primary);
+      color: var(--text-on-brand);
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-size: 11.5px;
+      border: none;
+      display: inline-block;
+    }
+
+    .btn-sage {
+      background: var(--bg-pill-muted);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 7px;
+      font-size: 11.5px;
+      display: inline-block;
+    }
+
+    /* Wireframe: Project Cards Grid */
+    .wireframe-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .proj-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 13px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .proj-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 6px;
+    }
+
+    .proj-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .proj-role {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+    }
+
+    .proj-stacks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 2px;
+    }
+
+    /* Wireframe: 3-Column Component Workspace (Below Horizontal Nav) */
+    .workspace-layout {
+      display: grid;
+      grid-template-columns: 170px 1fr 230px;
+      gap: 10px;
+      height: 195px;
+    }
+
+    .ws-pane {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 11px;
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .ws-pane-title {
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Wireframe: Full-Width Settings Content */
+    .readonly-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .readonly-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+
+    .readonly-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--brand-eyebrow);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .readonly-val {
+      font-size: 11.5px;
+      color: var(--text-primary);
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    @media print {
+      body {
+        background: var(--bg-canvas);
+        padding: 0;
+      }
+      .print-toolbar {
+        display: none !important;
+      }
+      .page {
+        border: none;
+        margin: 0;
+        width: 100%;
+        max-width: 100%;
+        padding: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="print-toolbar">
+    <span>Preview Guide Theme:</span>
+    <button class="btn-toolbar" onclick="toggleTheme()" id="themeBtn">Switch to Dark Mode</button>
+    <button class="btn-print" onclick="window.print()">Save as PDF</button>
+  </div>
+
+  <!-- PAGE 1: BRAND AESTHETIC, LIGHT & DARK THEME TOKENS & TYPOGRAPHY -->
+  <div class="page">
+    <div class="doc-header">
+      <div>
+        <div class="eyebrow">UI/UX Design System · v2.1</div>
+        <h1>ComPlix. Design Style Guide</h1>
+      </div>
+      <div class="doc-meta">
+        <div><strong>Product:</strong> ComPlix Component Library Builder</div>
+        <div><strong>Visual Direction:</strong> Organic Sage & Forest Green</div>
+        <div><strong>Themes:</strong> Light (Default) & Dark (Forest Slate)</div>
+      </div>
+    </div>
+
+    <h2>1. Design Philosophy & Honesty Boundaries</h2>
+    <p>
+      <strong>ComPlix.</strong> pairs a calm, editorial aesthetic—soft off-white and sage surfaces, crisp <code>1px</code> borders, and grounded forest-green primary actions—with strict architectural honesty. Users own their component libraries, choose frameworks independently per project, and collaborate in optional shared organization spaces.
+    </p>
+    <div class="info-card-grid">
+      <div class="info-card">
+        <div class="info-card-title">Horizontal Page Navigation</div>
+        <div class="info-card-desc">Top-level and project views render as distinct URL-backed pages using soft horizontal pill buttons. Inactive pages are never kept hidden in the DOM.</div>
+      </div>
+      <div class="info-card">
+        <div class="info-card-title">Honest Draft & Mock Labels</div>
+        <div class="info-card-desc">Clearly distinguish <code>Mock HTML Fixture</code> and <code>Unverified AI Draft</code> states from validated components. Never imply compilation or promotion unless verified.</div>
+      </div>
+      <div class="info-card">
+        <div class="info-card-title">Built-in Operator AI Chat</div>
+        <div class="info-card-desc">End users never supply AI keys. Project chat uses operator backend configuration, while uploaded references (max 128 KiB) render as escaped plain text.</div>
+      </div>
+    </div>
+
+    <h2>2. Dual-Theme Color Palette (Light & Dark Mode)</h2>
+    <p>
+      ComPlix supports both a warm <strong>Light Theme</strong> (matching the primary production workspace) and a low-glare <strong>Dark Theme</strong> built on deep forest-slate surfaces. All components reference semantic CSS variables so switching themes requires zero layout changes.
+    </p>
+
+    <div class="theme-comparison">
+      <!-- Light Theme Swatch Panel -->
+      <div class="theme-panel light-sample">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <strong style="font-size:13px;">Light Theme (Default)</strong>
+          <span style="font-size:10.5px; background:#E9EFEA; color:#214E34; padding:2px 8px; border-radius:5px; font-weight:600;">data-theme="light"</span>
+        </div>
+        <div class="swatch-row">
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#FAFBF9;"></div>
+            <div class="mini-meta"><div class="mini-name">Canvas</div><div class="mini-hex">#FAFBF9</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#F1F5F2;"></div>
+            <div class="mini-meta"><div class="mini-name">Sage Card</div><div class="mini-hex">#F1F5F2</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#FFFFFF;"></div>
+            <div class="mini-meta"><div class="mini-name">Elevated</div><div class="mini-hex">#FFFFFF</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#214E34;"></div>
+            <div class="mini-meta"><div class="mini-name">Forest Primary</div><div class="mini-hex">#214E34</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#D7E5DC;"></div>
+            <div class="mini-meta"><div class="mini-name">Active Pill</div><div class="mini-hex">#D7E5DC</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#E1E8E3;"></div>
+            <div class="mini-meta"><div class="mini-name">Sage Border</div><div class="mini-hex">#E1E8E3</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dark Theme Swatch Panel -->
+      <div class="theme-panel dark-sample">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <strong style="font-size:13px;">Dark Theme (Forest Slate)</strong>
+          <span style="font-size:10.5px; background:#284234; color:#78B894; padding:2px 8px; border-radius:5px; font-weight:600;">data-theme="dark"</span>
+        </div>
+        <div class="swatch-row">
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#0E1511;"></div>
+            <div class="mini-meta"><div class="mini-name">Canvas</div><div class="mini-hex">#0E1511</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#16211B;"></div>
+            <div class="mini-meta"><div class="mini-name">Sage Surface</div><div class="mini-hex">#16211B</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#1C2A22;"></div>
+            <div class="mini-meta"><div class="mini-name">Elevated</div><div class="mini-hex">#1C2A22</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#347B54;"></div>
+            <div class="mini-meta"><div class="mini-name">Forest Primary</div><div class="mini-hex">#347B54</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#284234;"></div>
+            <div class="mini-meta"><div class="mini-name">Active Pill</div><div class="mini-hex">#284234</div></div>
+          </div>
+          <div class="mini-swatch">
+            <div class="mini-color" style="background:#26362D;"></div>
+            <div class="mini-meta"><div class="mini-name">Slate Border</div><div class="mini-hex">#26362D</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>2.1 Complete Semantic Token Mapping</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Token Variable</th>
+          <th>Light Theme Value</th>
+          <th>Dark Theme Value</th>
+          <th>UI Role & Element Mapping</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>--bg-canvas</code> / <code>--bg-header</code></td>
+          <td><code>#FAFBF9</code> / <code>#FFFFFF</code></td>
+          <td><code>#0E1511</code> / <code>#121B16</code></td>
+          <td>Main page canvas and full-width horizontal top header bar</td>
+        </tr>
+        <tr>
+          <td><code>--bg-surface</code> / <code>--bg-elevated</code></td>
+          <td><code>#F1F5F2</code> / <code>#FFFFFF</code></td>
+          <td><code>#16211B</code> / <code>#1C2A22</code></td>
+          <td>Sage summary cards, outer workspace containers, and inner cards/panes</td>
+        </tr>
+        <tr>
+          <td><code>--bg-pill-muted</code> / <code>--bg-pill-active</code></td>
+          <td><code>#E9EFEA</code> / <code>#D7E5DC</code></td>
+          <td><code>#1E2D24</code> / <code>#284234</code></td>
+          <td>Inactive and active horizontal navigation pills (<code>Projects</code>, <code>Organizations</code>, etc.)</td>
+        </tr>
+        <tr>
+          <td><code>--brand-primary</code> / <code>--brand-eyebrow</code></td>
+          <td><code>#214E34</code> / <code>#355E46</code></td>
+          <td><code>#347B54</code> / <code>#78B894</code></td>
+          <td>Solid primary action buttons (<code>My projects</code>, <code>Create</code>) and uppercase section eyebrows</td>
+        </tr>
+        <tr>
+          <td><code>--text-primary</code> / <code>--text-secondary</code></td>
+          <td><code>#141A16</code> / <code>#4F5D54</code></td>
+          <td><code>#F0F5F1</code> / <code>#9CAEA2</code></td>
+          <td>High-contrast headings/titles and readable supporting body copy</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>3. Typography & Hierarchy</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>UI Role</th>
+          <th>Font Family</th>
+          <th>Size / Weight</th>
+          <th>Tracking / Style</th>
+          <th>Token</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Brand Wordmark (<code>ComPlix.</code>)</strong></td>
+          <td>Inter</td>
+          <td>18px / 700 Bold</td>
+          <td><code>-0.03em</code> tight</td>
+          <td><code>--text-primary</code></td>
+        </tr>
+        <tr>
+          <td><strong>Section Eyebrow</strong></td>
+          <td>Inter</td>
+          <td>11px / 700 Bold</td>
+          <td><code>0.12em</code> UPPERCASE</td>
+          <td><code>--brand-eyebrow</code></td>
+        </tr>
+        <tr>
+          <td><strong>Page Header (H1)</strong></td>
+          <td>Inter</td>
+          <td>30px / 700 Bold</td>
+          <td><code>-0.025em</code></td>
+          <td><code>--text-primary</code></td>
+        </tr>
+        <tr>
+          <td><strong>Workspace Section Title (H2)</strong></td>
+          <td>Inter</td>
+          <td>20px / 700 Bold</td>
+          <td><code>-0.015em</code></td>
+          <td><code>--text-primary</code></td>
+        </tr>
+        <tr>
+          <td><strong>Card Title & Nav Pill</strong></td>
+          <td>Inter</td>
+          <td>14px / 600 SemiBold</td>
+          <td>Normal</td>
+          <td><code>--text-primary</code></td>
+        </tr>
+        <tr>
+          <td><strong>Source Code & Escaped Previews</strong></td>
+          <td>JetBrains Mono</td>
+          <td>12.5px / 400 Regular</td>
+          <td><code>1.60</code> line-height</td>
+          <td><code>--text-primary</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- PAGE 2: URL-BACKED PAGE ARCHITECTURE & WORKSPACE SPECIFICATIONS -->
+  <div class="page">
+    <h2>4. URL-Backed Page Layout Specifications</h2>
+
+    <h3>4.1 Project Entry Page (<code>/projects</code> & Shared Filter View)</h3>
+    <p>
+      Matches the confirmed production layout: a clean white/slate header with centered soft-sage navigation pills (<code>Projects</code>, <code>Organizations</code>, <code>Invitations</code>) and a right-aligned <code>Sign out</code> pill. Below the 3-column summary row, the <strong>Workspace</strong> section switches between <strong>My projects</strong> (solid forest green pill) and <strong>Shared projects</strong> (with an organization dropdown filter).
+    </p>
+    <div class="preview-box">
+      <div class="mock-navbar">
+        <div class="mock-brand">ComPlix.</div>
+        <div class="horiz-nav">
+          <div class="nav-pill-btn active">Projects</div>
+          <div class="nav-pill-btn">Organizations</div>
+          <div class="nav-pill-btn">Invitations</div>
+        </div>
+        <div>
+          <span class="nav-pill-btn">Sign out</span>
+        </div>
+      </div>
+
+      <div style="padding: 4px 4px 10px 4px;">
+        <div class="eyebrow">YOUR COMPONENT LIBRARIES</div>
+        <div style="font-size:18px; font-weight:700; margin-bottom:2px;">Your projects</div>
+        <div style="font-size:11.5px; color:var(--text-secondary); margin-bottom:10px;">Signed in as <strong>Lilian Zeng</strong> · Each project has its own technology stack and design guidance.</div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+          <div style="display:flex; gap:6px;">
+            <span class="btn-forest">My projects</span>
+            <span class="btn-sage">Shared projects (Org Filter ▾)</span>
+          </div>
+          <span class="btn-forest">+ Create project</span>
+        </div>
+
+        <div class="wireframe-grid">
+          <div class="proj-card">
+            <div class="proj-card-header">
+              <div class="proj-title">Pilot B Design System</div>
+              <span class="badge badge-private">Private</span>
+            </div>
+            <div class="proj-role">Personal Owner · Full Access</div>
+            <div class="proj-stacks">
+              <span class="badge badge-stack">React + TS</span>
+              <span class="badge badge-stack">Tailwind + shadcn/ui</span>
+            </div>
+          </div>
+          <div class="proj-card">
+            <div class="proj-card-header">
+              <div class="proj-title">Pilot A Portal Library</div>
+              <span class="badge badge-shared">Acme Org</span>
+            </div>
+            <div class="proj-role">Shared · Editor Grant</div>
+            <div class="proj-stacks">
+              <span class="badge badge-stack">Blazor</span>
+              <span class="badge badge-stack">Bootstrap</span>
+            </div>
+          </div>
+          <div class="proj-card">
+            <div class="proj-card-header">
+              <div class="proj-title">Internal Analytics UI</div>
+              <span class="badge badge-shared">Core Team</span>
+            </div>
+            <div class="proj-role">Shared · Viewer (Read-Only)</div>
+            <div class="proj-stacks">
+              <span class="badge badge-stack">Angular</span>
+              <span class="badge badge-stack">MUI (Requested)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>4.2 Project Components Workspace (<code>/projects/:id/components</code>)</h3>
+    <p>
+      Retains the horizontal top navigation bar (with Project Picker and route back to the project grid) above a full-width 3-column workspace: a <strong>Toggleable Component List</strong> (<code>Common</code> & <code>Compositions</code>), a central <strong>Preview / Source / Docs / Validation</strong> surface, and the built-in <strong>Project Chat</strong> panel.
+    </p>
+    <div class="preview-box">
+      <div class="mock-navbar">
+        <div class="mock-brand">
+          <span>ComPlix.</span>
+          <span class="btn-sage" style="font-size:11px; padding:4px 8px;">← All projects</span>
+          <span style="font-size:12.5px; font-weight:600;">Pilot B Design System ▾</span>
+        </div>
+        <div class="horiz-nav">
+          <div class="nav-pill-btn active">Components</div>
+          <div class="nav-pill-btn">Design guidance</div>
+          <div class="nav-pill-btn">Settings</div>
+        </div>
+        <div>
+          <span class="badge badge-private">Owner</span>
+        </div>
+      </div>
+
+      <div class="workspace-layout">
+        <!-- Pane 1: Toggleable Component List -->
+        <div class="ws-pane">
+          <div class="ws-pane-title">
+            <span>Components</span>
+            <span style="font-size:10px; color:var(--brand-eyebrow); font-weight:600;">[Hide list]</span>
+          </div>
+          <div class="eyebrow" style="font-size:9.5px; margin-bottom:4px;">COMMON FOUNDATION</div>
+          <div style="background:var(--bg-pill-active); color:var(--text-primary); font-weight:600; padding:4px 7px; border-radius:5px; margin-bottom:4px;">Button</div>
+          <div style="color:var(--text-secondary); padding:3px 7px; margin-bottom:8px;">Input</div>
+          <div class="eyebrow" style="font-size:9.5px; margin-bottom:4px;">COMPOSITIONS</div>
+          <div style="color:var(--text-secondary); padding:3px 7px;">LoginForm</div>
+          <div style="color:var(--text-secondary); padding:3px 7px;">FilterPanel</div>
+        </div>
+
+        <!-- Pane 2: Inspection Surface -->
+        <div class="ws-pane">
+          <div class="ws-pane-title">
+            <div style="display:flex; gap:6px;">
+              <span class="btn-forest" style="padding:3px 8px; font-size:10px;">Source</span>
+              <span class="btn-sage" style="padding:3px 8px; font-size:10px;">Preview</span>
+              <span class="btn-sage" style="padding:3px 8px; font-size:10px;">Docs</span>
+              <span class="btn-sage" style="padding:3px 8px; font-size:10px;">Validation</span>
+            </div>
+            <span class="badge badge-warning">Unverified AI Draft</span>
+          </div>
+          <code style="display:block; background:var(--bg-surface); padding:8px; border-radius:6px; border:1px solid var(--border-subtle); color:var(--text-primary); line-height:1.55;">
+            // Candidate source (not promoted to current library)<br/>
+            export function Button({ label }: Props) {<br/>
+              return <button className="btn-primary">{label}</button>;<br/>
+            }
+          </code>
+        </div>
+
+        <!-- Pane 3: Built-in Project Chat -->
+        <div class="ws-pane" style="justify-content:space-between;">
+          <div>
+            <div class="ws-pane-title">
+              <span>Project chat</span>
+              <span class="badge badge-success">Connected</span>
+            </div>
+            <div style="background:var(--brand-primary); color:var(--text-on-brand); padding:6px 8px; border-radius:7px; font-size:10px; margin-bottom:6px;">
+              Add a compact secondary variant to Common Button.
+            </div>
+            <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); color:var(--text-primary); padding:6px 8px; border-radius:7px; font-size:10px;">
+              Draft updated (1 file). Inspect Source; build verification pending.
+            </div>
+          </div>
+          <div style="display:flex; gap:4px; align-items:center;">
+            <div style="flex:1; background:var(--bg-surface); border:1px solid var(--border-strong); padding:5px 8px; border-radius:6px; color:var(--text-muted); font-size:10px;">
+              Ask for components or edits...
+            </div>
+            <span class="btn-forest" style="padding:5px 8px; font-size:10px;">Send</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>4.3 Project Settings & Read-Only Technology Summary (<code>/projects/:id/settings</code>)</h3>
+    <p>
+      Uses the horizontal project navigation bar above a full-width card containing project rename controls, <strong>read-only requested technology blocks</strong>, and a <strong>Saved References summary</strong> with a direct link to Reference Management.
+    </p>
+    <div class="preview-box">
+      <div class="mock-navbar">
+        <div class="mock-brand">
+          <span>ComPlix.</span>
+          <span class="btn-sage" style="font-size:11px; padding:4px 8px;">← All projects</span>
+          <span style="font-size:12.5px; font-weight:600;">Pilot B Design System ▾</span>
+        </div>
+        <div class="horiz-nav">
+          <div class="nav-pill-btn">Components</div>
+          <div class="nav-pill-btn">Design guidance</div>
+          <div class="nav-pill-btn active">Settings</div>
+        </div>
+        <div>
+          <span class="badge badge-private">Owner</span>
+        </div>
+      </div>
+
+      <div class="ws-pane" style="height:auto;">
+        <div class="ws-pane-title">
+          <span>Requested Technology Configuration (Read-Only Summary)</span>
+          <span class="badge badge-private">Revision #4</span>
+        </div>
+        <div class="readonly-grid">
+          <div class="readonly-box">
+            <div class="readonly-label">Framework(s) & Language(s)</div>
+            <div class="readonly-val">React 19 · TypeScript 5</div>
+          </div>
+          <div class="readonly-box">
+            <div class="readonly-label">Styling & Libraries</div>
+            <div class="readonly-val">Tailwind CSS · shadcn/ui (Radix)</div>
+          </div>
+          <div class="readonly-box">
+            <div class="readonly-label">Version & Compatibility Notes</div>
+            <div class="readonly-val">Vite 8 host · WCAG AA focus</div>
+          </div>
+        </div>
+        <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; background:var(--bg-surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border-subtle);">
+          <div>
+            <span style="font-weight:600; color:var(--text-primary);">Saved References (3 / 20 files · 128 KiB cap):</span>
+            <span style="color:var(--text-secondary); margin-left:6px;">tokens.md, button-spec.txt, theme.css</span>
+          </div>
+          <span style="color:var(--brand-eyebrow); font-weight:700;">Manage references →</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>4.4 Component & Interaction Standards (Light & Dark Adaptive)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>Geometry & Radius</th>
+          <th>Active / Primary State</th>
+          <th>Default / Muted / Read-Only State</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Horizontal Nav Pill</strong></td>
+          <td><code>34px</code> height, <code>8px</code> radius</td>
+          <td>Fill <code>var(--bg-pill-active)</code>, Border <code>var(--border-strong)</code></td>
+          <td>Fill <code>var(--bg-pill-muted)</code>, Text <code>var(--text-primary)</code></td>
+        </tr>
+        <tr>
+          <td><strong>Primary Action Pill</strong></td>
+          <td><code>36px</code> height, <code>8px</code> radius</td>
+          <td>Fill <code>var(--brand-primary)</code> (<code>#214E34</code> Light / <code>#347B54</code> Dark)</td>
+          <td>Focus ring <code>2px solid var(--focus-ring)</code> with <code>2px</code> offset</td>
+        </tr>
+        <tr>
+          <td><strong>Summary & Project Cards</strong></td>
+          <td><code>12px</code> border radius, <code>16px</code> pad</td>
+          <td>Surface <code>var(--bg-elevated)</code>, <code>1px solid var(--border-subtle)</code></td>
+          <td>Info cards use soft sage fill <code>var(--bg-surface)</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    function toggleTheme() {
+      const html = document.documentElement;
+      const btn = document.getElementById('themeBtn');
+      if (html.getAttribute('data-theme') === 'dark') {
+        html.setAttribute('data-theme', 'light');
+        btn.textContent = 'Switch to Dark Mode';
+      } else {
+        html.setAttribute('data-theme', 'dark');
+        btn.textContent = 'Switch to Light Mode';
+      }
+    }
+  </script>
+</body>
+</html>

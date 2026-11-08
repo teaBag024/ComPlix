@@ -1,15 +1,61 @@
-import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
+import { ProjectLibrary } from './ProjectLibrary';
+import { ProjectReferences } from './ProjectReferences';
+import { ProjectCard, projectStack } from './ProjectCard';
 import { ProjectDetails, emptyTechnology, technologyLabels, type Technology } from './ProjectDetails';
 import { ProjectGuidance } from './ProjectGuidance';
-import { useEffect, useState, type FormEvent } from 'react';
+import { Modal } from './Modal';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { DbConnection, tables } from './module_bindings';
 import { useWorkspace, endpoint, database } from './useWorkspace';
 import { profiles } from './profiles';
 
+type WorkspacePage = 'projects' | 'library' | 'settings' | 'guidance' | 'references' | 'sharing' | 'organization' | 'organizationOverview' | 'organizationProjects' | 'organizationMembers' | 'organizationSettings' | 'invitations';
+type WorkspaceRoute = { page: WorkspacePage; projectId?: string; organizationId?: string };
+
+function readRoute(pathname: string): WorkspaceRoute {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts[0] === 'organizations') {
+    if (parts.length === 1) return { page: 'organization' };
+    if (!/^\d+$/.test(parts[1])) return { page: 'organization' };
+    const page = parts[2];
+    const organizationPage = page === 'projects' ? 'organizationProjects'
+      : page === 'members' ? 'organizationMembers'
+        : page === 'settings' ? 'organizationSettings' : 'organizationOverview';
+    return { page: organizationPage, organizationId: parts[1] };
+  }
+  if (parts[0] === 'invitations') return { page: 'invitations' };
+  if (parts[0] === 'projects' && parts.length > 1 && /^\d+$/.test(parts[1])) {
+    const page = parts[2];
+    if (page === 'settings' || page === 'guidance' || page === 'references' || page === 'sharing') {
+      return { page, projectId: parts[1] };
+    }
+    return { page: 'library', projectId: parts[1] };
+  }
+  return { page: 'projects' };
+}
+
+function pathFor(page: WorkspacePage, projectId?: string, organizationId?: string) {
+  if (page === 'projects') return '/projects';
+  if (page === 'organization') return '/organizations';
+  if (page === 'invitations') return '/invitations';
+  if (['organizationOverview', 'organizationProjects', 'organizationMembers', 'organizationSettings'].includes(page)) {
+    if (!organizationId) return '/organizations';
+    const suffix = page === 'organizationOverview' ? '' : page === 'organizationProjects' ? '/projects' : page === 'organizationMembers' ? '/members' : '/settings';
+    return `/organizations/${organizationId}${suffix}`;
+  }
+  if (!projectId) return '/projects';
+  return page === 'library' ? `/projects/${projectId}/components` : `/projects/${projectId}/${page}`;
+}
+
 export function OrganizationWorkspace({ token, signOut }: { token: string; signOut: () => Promise<void> }) {
+  const draftGuard = useRef<(() => Promise<unknown>) | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
+  const [route, setRoute] = useState<WorkspaceRoute>(() => readRoute(window.location.pathname));
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => window.localStorage.getItem('complix.theme') === 'dark' ? 'dark' : 'light');
   const { data, connection, status } = useWorkspace(token, attempt);
-  const [selected, setSelected] = useState('');
+  const [projectList, setProjectList] = useState<'owned' | 'shared'>('owned');
+  const [sharedOrganization, setSharedOrganization] = useState('');
+  const [activeModal, setActiveModal] = useState<'project' | 'organization' | 'invitation' | 'projectInvitation' | null>(null);
   const [selectedProject, setSelectedProject] = useState(() => sessionStorage.getItem('complix.activeProject') ?? '');
   const [newTechnology, setNewTechnology] = useState<Technology>(emptyTechnology);
   const [awaitingProject, setAwaitingProject] = useState<string[]>();
@@ -19,39 +65,114 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [orgName, setOrgName] = useState('');
+  const [renameOrgName, setRenameOrgName] = useState('');
   const [projectName, setProjectName] = useState('');
   const [createName, setCreateName] = useState('');
   const [profile, setProfile] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [inviteAccess, setInviteAccess] = useState('');
-  const org = data.organizations.find(item => item.id.toString() === selected) ?? data.organizations[0];
-  const project = data.projects.find(item => item.id.toString() === selectedProject) ?? data.projects[0];
+  const [projectInviteMode, setProjectInviteMode] = useState<'project' | 'organization' | 'organizationProject'>('project');
+  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  const toggleTheme = () => {
+    const next = theme === 'light' ? 'dark' : 'light';
+    window.localStorage.setItem('complix.theme', next);
+    document.documentElement.dataset.theme = next;
+    setTheme(next);
+  };
+  const navigate = async (page: WorkspacePage, projectId?: string, organizationId?: string) => {
+    try { await draftGuard.current?.(); }
+    catch { setError('Save or resolve your draft edits before leaving the component workspace.'); return; }
+    const nextProjectId = ['library', 'settings', 'guidance', 'references', 'sharing'].includes(page) ? projectId ?? route.projectId : undefined;
+    const nextOrganizationId = ['organizationOverview', 'organizationProjects', 'organizationMembers', 'organizationSettings'].includes(page)
+      ? organizationId ?? route.organizationId : undefined;
+    const nextPath = pathFor(page, nextProjectId, nextOrganizationId);
+    if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath);
+    setRoute({ page, projectId: nextProjectId, organizationId: nextOrganizationId });
+  };
+  const latestRoute = useRef(route);
+  latestRoute.current = route;
   useEffect(() => {
-    if (project) { sessionStorage.setItem('complix.activeProject', project.id.toString()); setSelectedProject(project.id.toString()); }
+    const syncRoute = async () => {
+      const next = readRoute(window.location.pathname);
+      try { await draftGuard.current?.(); setRoute(next); }
+      catch {
+        const previous = latestRoute.current;
+        window.history.replaceState({}, '', pathFor(previous.page, previous.projectId, previous.organizationId));
+        setError('Save or resolve your draft edits before leaving the component workspace.');
+      }
+    };
+    window.addEventListener('popstate', syncRoute);
+    if (window.location.pathname === '/' || window.location.pathname === '/callback') {
+      window.history.replaceState({}, '', '/projects');
+    } else {
+      const current = readRoute(window.location.pathname);
+      if (current.page === 'library' && current.projectId && window.location.pathname !== pathFor('library', current.projectId)) {
+        window.history.replaceState({}, '', pathFor('library', current.projectId));
+      }
+    }
+    return () => window.removeEventListener('popstate', syncRoute);
+  }, []);
+  useEffect(() => { window.scrollTo(0, 0); }, [route.page, route.projectId, route.organizationId]);
+  const org = route.organizationId ? data.organizations.find(item => item.id.toString() === route.organizationId) : undefined;
+  const project = route.projectId ? data.projects.find(item => item.id.toString() === route.projectId) : undefined;
+  const projectOrganization = project ? data.organizations.find(item => item.id === project.organizationId) : undefined;
+  const projectContext = project ?? data.projects.find(item => item.id.toString() === selectedProject);
+  useEffect(() => {
+    if (project) {
+      sessionStorage.setItem('complix.activeProject', project.id.toString());
+      setSelectedProject(project.id.toString());
+    }
     setAssociation(String(project?.organizationId ?? 0n));
   }, [project?.id, project?.organizationId]);
   const manager = org?.role === 'owner' || org?.role === 'admin';
+  const projectOrganizationManager = projectOrganization?.role === 'owner' || projectOrganization?.role === 'admin';
+  const ownedProjects = data.projects.filter(item => item.ownership === 'personal' && !!data.profile && item.owner.isEqual(data.profile.identity));
+  const sharedProjects = data.projects.filter(item => !ownedProjects.some(owned => owned.id === item.id));
+  const openProject = (id: bigint) => navigate('library', id.toString());
+  const cards = (items: typeof data.projects) => <div className="project-grid">{items.map(item => <ProjectCard key={item.id.toString()}
+    project={item} owned={ownedProjects.some(owned => owned.id === item.id)} active={item.id === project?.id}
+    organization={data.organizations.find(space => space.id === item.organizationId)?.name} open={() => openProject(item.id)} />)}</div>;
+  const projectAccessMembers = project ? [
+    ...data.members.filter(member => member.organizationId === project.organizationId && !member.user.isEqual(project.owner) &&
+      (project.ownership === 'personal' || member.role === 'member')).map(member => ({
+        key: 'member:' + member.key, user: member.user, name: member.name, email: member.email, role: member.role,
+        projectRole: data.shares.find(grant => grant.projectId === project.id && grant.user.isEqual(member.user))?.role ?? '',
+      })),
+    ...data.shares.filter(grant => grant.projectId === project.id && !grant.user.isEqual(project.owner) &&
+      !data.members.some(member => member.organizationId === project.organizationId && member.user.isEqual(grant.user))).map(grant => ({
+        key: 'share:' + grant.key, user: grant.user, name: grant.name, email: grant.email, role: '', projectRole: grant.role,
+      })),
+  ] : [];
+  const visibleSharedProjects = sharedOrganization
+    ? sharedProjects.filter(item => item.organizationId.toString() === sharedOrganization)
+    : sharedProjects;
+
   useEffect(() => {
     if (!awaitingProject || !data.profile) return;
     const added = data.projects.find(row => row.owner.isEqual(data.profile!.identity) && !awaitingProject.includes(row.id.toString()));
-    if (added) { setSelectedProject(added.id.toString()); setAwaitingProject(undefined); }
+    if (added) { openProject(added.id); setAwaitingProject(undefined); }
   }, [awaitingProject, data.projects, data.profile]);
 
   useEffect(() => {
     setError(''); setNotice(''); setProjectName('');
     setInviteEmail(''); setInviteRole('member'); setInviteAccess('');
   }, [org?.id, org?.role]);
+  useEffect(() => { setRenameOrgName(org?.name ?? ''); }, [org?.id, org?.name]);
   async function run(action: () => Promise<void>) {
     setPending(true); setError(''); setNotice('');
-    try { await action(); setNotice('Saved.'); }
+    try { await action(); setNotice('Saved.'); return true; }
     catch (cause) {
-      const message = cause instanceof Error ? cause.message : '';
-      const known = ['Access denied.', 'This organization already has a project.', 'An active invitation already exists for this email.', 'You are already a member.', 'A valid email address is required.', 'Name must be 1–80 characters without control characters.', 'Create the organization project before granting project access.', 'Sign in with a verified email address.', 'Project owner access cannot be changed.', 'Your session expired. Sign in again and retry.', 'Choose a project you manage in this organization.', 'Technology details must be at most 1000 characters per field without control characters.', 'Organization owners cannot leave their organization.'];
+      const message = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : '';
+      const known = ['Access denied.', 'This organization already has a project.', 'An active invitation already exists for this email.', 'An active project invitation already exists for this email.', 'You already have access to this project.', 'You are already a member.', 'A valid email address is required.', 'Name must be 1–80 characters without control characters.', 'Create the organization project before granting project access.', 'Sign in with a verified email address.', 'Project owner access cannot be changed.', 'Your session expired. Sign in again and retry.', 'Choose a project you manage in this organization.', 'Technology details must be at most 1000 characters per field without control characters.', 'Organization owners cannot leave their organization.'];
       setError(known.find(text => message.includes(text)) ?? 'The operation could not be confirmed. Check your access and connection before retrying.');
+      return false;
     } finally { setPending(false); }
   }
-  function form(event: FormEvent, action: () => Promise<void>) { event.preventDefault(); void run(action); }
+  function form(event: FormEvent, action: () => Promise<void>, onSuccess?: () => void) {
+    event.preventDefault();
+    void run(action).then(success => { if (success) onSuccess?.(); });
+  }
   const api = () => { if (!connection || status !== 'ready') throw new Error('Disconnected'); return connection.reducers; };
   async function importLegacy() {
     const oldToken = localStorage.getItem('complix.local.identity.v1');
@@ -77,128 +198,324 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
     } finally { legacy?.disconnect(); }
   }
   return <>
-    <header><span className="brand">ComPlix.</span><button className="secondary" onClick={() => void signOut()}>Sign out</button></header>
+    <header className="app-header">
+      <div className="header-project-context">
+        <button type="button" className="brand brand-link" onClick={() => navigate('projects')}>ComPlix.</button>
+        {project && <button type="button" className="secondary back-to-projects" onClick={() => navigate('projects')}>All projects</button>}
+        {(project || route.page === 'invitations') && data.projects.length > 0 && <label className="project-switcher">Project<select aria-label="Active project" value={projectContext?.id.toString() ?? ''} onChange={e => {
+          if (!e.target.value) return;
+          if (!project) {
+            setSelectedProject(e.target.value);
+            sessionStorage.setItem('complix.activeProject', e.target.value);
+          } else openProject(BigInt(e.target.value));
+        }}>
+          {!projectContext && <option value="">Choose a project</option>}{data.projects.map(item => <option key={item.id.toString()} value={item.id.toString()} data-testid={project?.id === item.id ? 'project-name' : undefined}>{item.name}</option>)}</select></label>}
+      </div>
+      {project
+        ? <nav className="project-page-nav" aria-label="Project pages">
+          <button type="button" aria-current={route.page === 'library' ? 'page' : undefined} onClick={() => navigate('library')}>Components</button>
+          <button type="button" aria-current={route.page === 'guidance' ? 'page' : undefined} onClick={() => navigate('guidance')}>Design guidance</button>
+          <button type="button" aria-current={['settings', 'references', 'sharing'].includes(route.page) ? 'page' : undefined} onClick={() => navigate('settings')}>Settings</button>
+        </nav>
+        : route.organizationId && org
+          ? <nav className="project-page-nav organization-page-nav" aria-label="Organization pages">
+            <button type="button" className="secondary" onClick={() => navigate('organization')}>All organizations</button>
+            <button type="button" aria-current={route.page === 'organizationOverview' ? 'page' : undefined} onClick={() => navigate('organizationOverview')}>Overview</button>
+            <button type="button" aria-current={route.page === 'organizationProjects' ? 'page' : undefined} onClick={() => navigate('organizationProjects')}>Projects</button>
+            <button type="button" aria-current={route.page === 'organizationMembers' ? 'page' : undefined} onClick={() => navigate('organizationMembers')}>Members &amp; invitations</button>
+            <button type="button" aria-current={route.page === 'organizationSettings' ? 'page' : undefined} onClick={() => navigate('organizationSettings')}>Settings</button>
+          </nav>
+          : <nav className="top-navigation" aria-label="Workspace pages">
+          <button type="button" aria-current={route.page === 'projects' ? 'page' : undefined} onClick={() => navigate('projects')}>Projects</button>
+          <button type="button" aria-current={route.page === 'organization' ? 'page' : undefined} onClick={() => navigate('organization')}>Organizations</button>
+          <button type="button" aria-current={route.page === 'invitations' ? 'page' : undefined} onClick={() => navigate('invitations')}>Invitations{data.invitations.length > 0 ? ` (${data.invitations.length})` : ''}</button>
+        </nav>}
+      <div className="header-actions">
+        {project && <span className="badge access-badge">{ownedProjects.some(item => item.id === project.id) ? 'Owner' : project.permission === 'editor' ? 'Editor' : 'Viewer'}</span>}
+        <button type="button" className="secondary theme-toggle" onClick={toggleTheme} aria-pressed={theme === 'dark'} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' theme'}>{theme === 'light' ? 'Dark mode' : 'Light mode'}</button>
+        <button type="button" className="secondary sign-out" onClick={() => { void (async () => { try { await draftGuard.current?.(); await signOut(); } catch { setError('Save or resolve your draft edits before signing out.'); } })(); }}>Sign out</button>
+      </div>
+    </header>
     <main>
-      <div className="eyebrow">Shared component libraries</div><h1>Project workspace</h1>
+      {!project && <><div className="eyebrow">{route.organizationId ? 'Organization workspace' : 'Your component libraries'}</div>
+      <h1>{route.organizationId ? org?.name ?? 'Organization'
+        : route.page === 'organization' ? 'Organizations'
+          : route.page === 'invitations' ? 'Invitations' : 'Your projects'}</h1></>}
       {status === 'loading' && <p role="status">Connecting and loading your workspace…</p>}
       {status === 'error' && <section className="panel"><p role="alert" className="error">Cannot load the workspace. Check the backend connection, configured sign-in client, and verified email, then retry.</p><button onClick={() => setAttempt(value => value + 1)}>Retry connection</button></section>}
       {status === 'ready' && <>
-        <p className="intro">Signed in as <strong>{data.profile?.name}</strong> · <span data-testid="profile-email">{data.profile?.email}</span></p>
-        {error && <p role="alert" className="error">{error}</p>}
+        {route.page === 'projects' && <p className="intro">Signed in as <strong>{data.profile?.name}</strong> · <span data-testid="profile-email">{data.profile?.email}</span></p>}
+        {route.organizationId && !org && <section className="panel"><p role="alert">This organization is unavailable or you no longer have access.</p><button type="button" onClick={() => navigate('organization')}>Back to organizations</button></section>}
+        {project && route.page !== 'library' && <><div className="project-page-heading"><div className="eyebrow">Project workspace</div><h1>{project.name}</h1></div>
+          <p className="project-stack-summary">{projectStack(project)}</p></>}
+        {route.page === 'projects' && <>
+        <div className="workspace-overview" aria-label="Workspace overview">
+          <div><strong>{ownedProjects.length} owned {ownedProjects.length === 1 ? 'project' : 'projects'}</strong><span>Create private projects and share only with selected people.</span></div>
+          <div><strong>A stack for each project</strong><span>Choose frameworks, languages and libraries independently.</span></div>
+          <div><strong>{data.organizations.length} {data.organizations.length === 1 ? 'organization' : 'organizations'}</strong><span>Optional shared spaces for people and multiple projects.</span></div>
+        </div></>}
+        {error && !activeModal && <p role="alert" className="error">{error}</p>}
         {notice && <p role="status" className="status">{notice}</p>}
+        {route.projectId && !project && status === 'ready' && <section className="panel">
+          <p role="alert">This project is unavailable or you no longer have access.</p>
+          <button type="button" onClick={() => navigate('projects')}>Back to projects</button>
+        </section>}
         <fieldset disabled={pending} className="workspace-controls">
-          <div className="workspace-toolbar">
-            <div><span className="eyebrow">Active library</span><h2 data-testid={project ? "project-name" : undefined}>{project?.name ?? 'Your workspace'}</h2>
-            <span className="badge">{project ? project.permission === 'editor' ? 'Editor' : 'Viewer' : 'Create a project to get started'}</span></div>
-            {data.projects.length > 0 && <label className="project-switcher">Active project<select aria-label="Active project" value={project?.id.toString() ?? ''} onChange={e => setSelectedProject(e.target.value)}>{data.projects.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}</select></label>}
+          {route.page === 'projects' && <section className="route-page" aria-label="Projects">
+          <div className="project-actions-row">
+            <div className="project-list-switch" role="group" aria-label="Project list">
+              <button type="button" className={projectList === 'owned' ? '' : 'secondary'} aria-pressed={projectList === 'owned'} onClick={() => setProjectList('owned')}>My projects</button>
+              <button type="button" className={projectList === 'shared' ? '' : 'secondary'} aria-pressed={projectList === 'shared'} onClick={() => setProjectList('shared')}>Shared projects</button>
+            </div>
+            {projectList === 'shared' && <label className="shared-project-filter">Organization<select aria-label="Filter shared projects by organization" value={sharedOrganization} onChange={e => setSharedOrganization(e.target.value)}>
+                <option value="">All organizations</option>{data.organizations.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}
+            </select></label>}
+            <button type="button" className="create-project-shortcut" onClick={() => { setError(''); setActiveModal('project'); }}>+ Create project</button>
           </div>
-          <Tabs defaultValue="projects">
-            <TabsList aria-label="Workspace sections">
-              <TabsTrigger value="projects">Projects</TabsTrigger>
-              <TabsTrigger value="guidance" disabled={!project}>Design guidance</TabsTrigger>
-              <TabsTrigger value="technologies" disabled={!project}>Technologies</TabsTrigger>
-              <TabsTrigger value="sharing" disabled={!project}>Sharing</TabsTrigger>
-              <TabsTrigger value="organization">Organization</TabsTrigger>
-              <TabsTrigger value="invitations">Invitations {data.invitations.length > 0 && <span className="tab-count">{data.invitations.length}</span>}</TabsTrigger>
-            </TabsList>
-          <TabsContent value="projects"><section className="panel"><h2>Your projects</h2>
-            <p className="note">Create a reusable library. Keep it private or share it with your team.</p>
-            <form onSubmit={e => form(e, async () => {
-              const previousIds = data.projects.map(row => row.id.toString());
-              await api().createProjectWithDetails({ name: createName, organizationId: BigInt(newOrganization), ...newTechnology });
-              setAwaitingProject(previousIds);
-              setCreateName('');
-            })}>
-              <h3>Create a project</h3>
-              <label>Project name<input aria-label="Project name" required maxLength={80} value={createName} onChange={e => setCreateName(e.target.value)} /></label>
-              <label>Share through organization<select aria-label="Share through organization" value={newOrganization} onChange={e => setNewOrganization(e.target.value)}>
-                <option value="0">Private — no organization</option>{data.organizations.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}
-              </select></label>
-              <p className="note">Selecting an organization does not give its members or admins access. Grant access to specific members after creating the project.</p>
-              <label>Technology starting point<select aria-label="Technology starting point" value={profile} onChange={e => {
-                const value = e.target.value; setProfile(value);
-                setNewTechnology(value === 'blazor-bootstrap' ? { framework: 'Blazor', language: 'C#', styling: 'Bootstrap', libraries: '', versions: '' }
-                  : value === 'react-ts-tailwind-shadcn' ? { framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' } : emptyTechnology);
-              }}><option value="">Custom / undecided</option>{Object.entries(profiles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              {Object.entries(technologyLabels).map(([field, label]) => <label key={field}>{label}<input aria-label={'Requested ' + label} maxLength={1000} value={newTechnology[field as keyof Technology]} onChange={e => setNewTechnology(old => ({ ...old, [field]: e.target.value }))} /></label>)}
-              <button>Create project</button>
-            </form>
-            {localStorage.getItem('complix.local.identity.v1') && <button className="secondary" onClick={() => void run(importLegacy)}>Import previous local project as private</button>}
-          </section>
-          {project && <section className="panel"><h2>Project settings</h2>
-            <p>{project.organizationId ? 'Shared through ' + (data.organizations.find(item => item.id === project.organizationId)?.name ?? 'an organization') : 'Private project — no organization'}</p>
-            <p className="muted">Your project access: {project.permission}{project.ownership === 'organization' ? ' · Existing organization-owned project' : ''}</p>
-            {project.permission === 'editor' && <form onSubmit={e => form(e, async () => { await api().renameProject({ projectId: project.id, name: projectName }); setProjectName(''); })}>
-              <label>New project name<input aria-label="New project name" required maxLength={80} value={projectName} onChange={e => setProjectName(e.target.value)} /></label><button>Rename project</button>
-            </form>}
+          {projectList === 'owned'
+            ? ownedProjects.length ? cards(ownedProjects) : <p className="empty-projects">You don't own any projects yet. Use Create project to start your first library.</p>
+            : visibleSharedProjects.length ? cards(visibleSharedProjects) : <p className="empty-projects">No shared projects in this organization yet.</p>}
           </section>}
-          </TabsContent><TabsContent value="technologies">
-          {project && connection && <ProjectDetails key={'details:' + project.id.toString()} project={project} connection={connection} />}
-          </TabsContent><TabsContent value="guidance">
+          {route.page === 'guidance' && <section className="route-page" aria-label="Design guidance">
           {project && connection && <ProjectGuidance key={'guidance:' + project.id.toString()} projectId={project.id}
             identity={data.profile!.identity.toHexString()} editable={project.permission === 'editor'}
             saved={data.guidance.find(row => row.projectId === project.id)} connection={connection} />}
-          </TabsContent><TabsContent value="sharing">
+          </section>}
+          {route.page === 'library' && <section className="route-page" aria-label="Components">
+          {project && connection && <ProjectLibrary key={'library:' + project.id.toString()} projectId={project.id} target={project} draftGuard={draftGuard} editable={project.permission === 'editor'}
+            drafts={data.drafts.filter(row => row.projectId === project.id)} jobs={data.jobs.filter(row => row.projectId === project.id)} references={data.references.filter(row => row.projectId === project.id)} mode={data.generationMode} chatEnabled={data.chatEnabled} connection={connection} />}
+          </section>}
+          {route.page === 'references' && <section className="route-page" aria-label="References">
+          {project && connection && <ProjectReferences key={'references:' + project.id.toString()} editable={project.permission === 'editor'}
+            references={data.references.filter(row => row.projectId === project.id).map(row => ({ ...row, byteLength: row.bytes.length }))}
+            upload={(filename, purpose, bytes) => connection.reducers.uploadReference({ projectId: project.id, filename, purpose, bytes })}
+            remove={referenceId => connection.reducers.removeReference({ referenceId })} />}
+          </section>}
+          {route.page === 'sharing' && <section className="route-page" aria-label="Project sharing">
           {project && <section className="panel"><h2>Project sharing</h2><p className="note">{project.organizationId ? 'Manage the organization and people who can access this library.' : 'This library is private. Choose an organization to share it with selected members.'}</p>            {project.canManage && project.ownership === 'personal' && <form onSubmit={e => form(e, () => api().setProjectOrganization({ projectId: project.id, organizationId: BigInt(association) }))}>
               <label>Project sharing organization<select aria-label="Project sharing organization" value={association} onChange={e => setAssociation(e.target.value)}><option value="0">Private — no organization</option>{data.organizations.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}</select></label>
               <p className="note">Changing or removing the organization removes all existing project grants and pending invitation grants. It does not transfer ownership.</p><button>Update sharing organization</button>
             </form>}</section>}
-          {project?.canManage && project.organizationId !== 0n && <section className="panel"><h2>Share this project</h2>
-            <p>Only selected members receive access to personal projects. Existing organization-owned projects retain owner/admin management. Removing a member from the organization removes their grants.</p>
-            <ul className="member-list">{data.members.filter(member => member.organizationId === project.organizationId && !member.user.isEqual(project.owner) && (project.ownership === 'personal' || member.role === 'member')).map(member => <li key={member.key}>
-              <strong>{member.name}</strong><label>Project access for {member.name}<select aria-label={'Project access for ' + member.name}
-                value={data.shares.find(grant => grant.projectId === project.id && grant.user.isEqual(member.user))?.role ?? ''}
+          {project?.canManage && <section className="panel"><div className="panel-heading"><h2>Share this project</h2>
+            <button type="button" className="secondary" onClick={() => {
+              setError(''); setProjectInviteMode('project'); setInviteAccess('viewer'); setInviteRole('member'); setActiveModal('projectInvitation');
+            }}>Invite to project</button>
+          </div>
+            <p>Project access is granted explicitly. A project-only invitation does not add organization membership. Removing a member from an organization removes their grants to that organization’s projects.</p>
+            <ul className="member-list">{projectAccessMembers.map(member => <li key={member.key}>
+              <strong>{member.name}</strong>{member.role && <span className="badge">{member.role}</span>}{member.email && <span> · {member.email}</span>}
+              <label>Project access for {member.name}<select aria-label={'Project access for ' + member.name}
+                value={member.projectRole}
                 onChange={e => void run(() => api().setProjectAccess({ projectId: project.id, member: member.user, role: e.target.value }))}>
                 <option value="">No access</option><option value="viewer">Viewer</option><option value="editor">Editor</option>
               </select></label>
             </li>)}</ul>
+            {projectAccessMembers.length === 0 && <p className="note">No one else currently has access to this project.</p>}
           </section>}
-          </TabsContent><TabsContent value="organization">
-          <section className="panel">
-            <h2>Your organizations</h2>
-            {data.organizations.length ? <><label htmlFor="organization">Active organization</label><select id="organization" value={org?.id.toString() ?? ''} onChange={e => setSelected(e.target.value)}>
-              {data.organizations.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}
-            </select><p className="muted">Your role: {org?.role}</p></> : <p>No organizations yet. Create one or accept an invitation.</p>}
-            <form onSubmit={e => form(e, async () => { await api().createOrganization({ name: orgName }); setOrgName(''); })}>
-              <label htmlFor="organization-name">New organization name</label><input id="organization-name" required maxLength={80} value={orgName} onChange={e => setOrgName(e.target.value)} />
-              <button>Create organization</button>
-            </form>
-          </section>
+          </section>}
+          {route.page === 'organization' && <section className="route-page" aria-label="Organizations">
+            <section className="panel">
+              <div className="panel-heading"><h2>Your organization spaces</h2>
+                <button type="button" className="secondary" onClick={() => { setError(''); setActiveModal('organization'); }}>+ Create organization</button>
+              </div>
+              <p className="note">You can belong to no organizations, one, or many. Each is a shared space for members to collaborate on multiple projects. Joining does not give everyone access to every project.</p>
+              <div className="space-grid">{data.organizations.map(space => {
+                const spaceProjects = data.projects.filter(item => item.organizationId === space.id);
+                return <article className="space-card" key={space.id.toString()} aria-label={'Organization space ' + space.name}>
+                  <div className="card-badges"><span className="badge">Organization space</span><span className="badge">Your role: {space.role}</span></div><h3>{space.name}</h3>
+                  <p className="note">{spaceProjects.length} {spaceProjects.length === 1 ? 'project' : 'projects'} you can access in this space</p>
+                  {spaceProjects.length ? <ul className="space-projects">{spaceProjects.map(item => <li key={item.id.toString()}>
+                    <button type="button" className="space-project-link" onClick={() => openProject(item.id)}>{item.name}</button><span>{projectStack(item)}</span>
+                  </li>)}</ul> : <p className="note">No projects shared with you here yet. Private and ungranted projects are not listed.</p>}
+                  <button type="button" className="secondary" onClick={() => navigate('organizationOverview', undefined, space.id.toString())}>Manage {space.name}</button>
+                </article>;
+              })}</div>
+              {!data.organizations.length && <p>No organizations yet. Your private projects work without one. Create a shared space or accept an invitation.</p>}
+            </section>
+          </section>}
 
-          {org && org.role !== 'owner' && <button onClick={() => void run(() => api().leaveOrganization({ organizationId: org.id }))}>Leave {org.name}</button>}
-          {org && manager && <section className="panel">
-            <h2>Members and access</h2>
-            <p className="note">Organization roles manage membership. They do not grant access to personally owned projects.</p>
-            <ul className="member-list">{data.members.filter(member => member.organizationId === org.id).map(member => <li key={member.key}>
-              <strong>{member.name}</strong> · {member.email} <span className="badge">{member.role}</span>
-              {member.role !== 'owner' && <>
-                {org.role === 'owner' && <label>Organization role for {member.name}<select aria-label={'Organization role for ' + member.name} value={member.role} onChange={e => void run(() => api().setMemberRole({ organizationId: org.id, member: member.user, role: e.target.value }))}>
-                  <option value="member">Member</option><option value="admin">Admin</option>
-                </select></label>}
-                {(org.role === 'owner' || member.role === 'member') && <button className="secondary" onClick={() => void run(() => api().removeMember({ organizationId: org.id, member: member.user }))}>Remove {member.name}</button>}
-              </>}
-            </li>)}</ul>
-            <form onSubmit={e => form(e, async () => { await api().inviteMember({ organizationId: org.id, email: inviteEmail, role: inviteRole, projectRole: inviteAccess, projectId: project?.canManage && project.organizationId === org.id ? project.id : undefined }); setInviteEmail(''); })}>
-              <label htmlFor="invite-email">Invite email</label><input id="invite-email" required type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
-              <label htmlFor="invite-role">Organization role</label><select id="invite-role" value={inviteRole} onChange={e => setInviteRole(e.target.value)}><option value="member">Member</option>{org.role === 'owner' && <option value="admin">Admin</option>}</select>
-              <label htmlFor="invite-access">Initial project access</label><select id="invite-access" value={inviteAccess} onChange={e => setInviteAccess(e.target.value)}><option value="">No access</option>{project?.canManage && project.organizationId === org.id && <><option value="viewer">Viewer</option><option value="editor">Editor</option></>}</select>
-              <button>Create invitation</button>
-            </form>
-            <p className="note">Invitations expire after seven days and appear when the recipient signs in with that verified email. No invitation email is sent; share the app address with them.</p>
+          {route.page === 'organizationOverview' && org && <section className="route-page" aria-label="Organization overview">
+            <section className="panel">
+              <div className="card-badges"><span className="badge">Organization space</span><span className="badge">Your role: {org.role}</span></div>
+              <p>You can access {data.projects.filter(item => item.organizationId === org.id).length} projects in this shared space.</p>
+              <p className="note">Organization membership does not automatically grant access to every project.</p>
+              <div className="project-actions-row">
+                <button type="button" onClick={() => navigate('organizationProjects')}>View projects</button>
+                <button type="button" className="secondary" onClick={() => navigate('organizationMembers')}>Manage members</button>
+                {manager && <button type="button" className="secondary" onClick={() => navigate('organizationSettings')}>Organization settings</button>}
+              </div>
+              {data.projects.some(item => item.organizationId === org.id) && <ul className="space-projects">{data.projects.filter(item => item.organizationId === org.id).map(item =>
+                <li key={item.id.toString()}><button type="button" className="space-project-link" onClick={() => openProject(item.id)}>{item.name}</button><span>{projectStack(item)}</span></li>)}</ul>}
+            </section>
+            {org.role !== 'owner' && <button type="button" className="secondary" onClick={() => void run(() => api().leaveOrganization({ organizationId: org.id }))}>Leave {org.name}</button>}
           </section>}
-          </TabsContent><TabsContent value="invitations"><section className="panel"><h2>Invitations</h2>
+
+          {route.page === 'organizationProjects' && org && <section className="route-page" aria-label="Organization projects">
+            <section className="panel">
+              <h2>Projects you can access in {org.name}</h2>
+              <p className="note">Open a project to work in its regular project workspace. Projects you do not have access to are not shown.</p>
+              {data.projects.filter(item => item.organizationId === org.id).length
+                ? cards(data.projects.filter(item => item.organizationId === org.id))
+                : <p>No projects are shared with you in this organization yet.</p>}
+            </section>
+          </section>}
+
+          {route.page === 'organizationMembers' && org && <section className="route-page" aria-label="Organization members and invitations">
+            <section className="panel">
+              <div className="panel-heading"><h2>Members of {org.name}</h2>
+                {manager && <button type="button" className="secondary" onClick={() => { setError(''); setInviteRole('member'); setInviteAccess(''); setActiveModal('invitation'); }}>Invite member</button>}
+              </div>
+              <p className="note">Organization roles manage membership. They do not grant access to personally owned projects.</p>
+              {manager ? <ul className="member-list">{data.members.filter(member => member.organizationId === org.id).map(member => <li key={member.key}>
+                <strong>{member.name}</strong> · {member.email} <span className="badge">{member.role}</span>
+                {member.role !== 'owner' && <>
+                  {org.role === 'owner' && <label>Organization role for {member.name}<select aria-label={'Organization role for ' + member.name} value={member.role} onChange={e => void run(() => api().setMemberRole({ organizationId: org.id, member: member.user, role: e.target.value }))}>
+                    <option value="member">Member</option><option value="admin">Admin</option>
+                  </select></label>}
+                  {(org.role === 'owner' || member.role === 'member') && <button type="button" className="secondary" onClick={() => void run(() => api().removeMember({ organizationId: org.id, member: member.user }))}>Remove {member.name}</button>}
+                </>}
+              </li>)}</ul> : <p>Only organization owners and admins can view and manage the member roster.</p>}
+            </section>
+            <section className="panel">
+              <h2>Pending invitations</h2>
+              <p className="note">Invitations expire after seven days. No email is sent; share the app address with the recipient.</p>
+              <ul className="member-list">{data.invitations.filter(invite => invite.organizationId === org.id).map(invite => <li key={invite.id.toString()}>
+                <strong>{invite.email}</strong> · {invite.role || 'member'}{invite.projectRole ? ` · ${invite.projectRole} access to ${invite.projectName}` : ''}
+                <p className="note">Expires {new Date(Number(invite.expiresAt.microsSinceUnixEpoch / 1000n)).toLocaleString()}</p>
+                {manager && <button type="button" className="secondary" onClick={() => void run(() => api().revokeInvitation({ invitationId: invite.id }))}>Revoke invitation for {invite.email}</button>}
+              </li>)}</ul>
+              {!data.invitations.some(invite => invite.organizationId === org.id) && <p>No pending invitations.</p>}
+            </section>
+            {org.role !== 'owner' && <button type="button" className="secondary" onClick={() => void run(() => api().leaveOrganization({ organizationId: org.id }))}>Leave {org.name}</button>}
+          </section>}
+
+          {route.page === 'organizationSettings' && org && <section className="route-page" aria-label="Organization settings">
+            <section className="panel">
+              <h2>Organization settings</h2>
+              <p className="muted">Your role: {org.role}</p>
+              {manager
+                ? <form onSubmit={e => form(e, () => api().renameOrganization({ organizationId: org.id, name: renameOrgName }))}>
+                    <label>Organization name<input aria-label="Organization name" required maxLength={80} value={renameOrgName} onChange={e => setRenameOrgName(e.target.value)} /></label>
+                    <button>Save organization name</button>
+                  </form>
+                : <p>Only organization owners and admins can change organization settings.</p>}
+            </section>
+          </section>}
+          {route.page === 'invitations' && <section className="route-page" aria-label="Invitations"><section className="panel"><h2>Invitations</h2>
             {!data.invitations.length && <p>No pending invitations.</p>}
             <ul className="member-list">{data.invitations.map(invite => <li key={invite.id.toString()}>
-              <strong>{invite.organizationName}</strong> · {invite.email} · {invite.role} / {invite.projectRole || 'no project access'}
+              <strong>{invite.organizationId ? invite.organizationName : `Project: ${invite.projectName}`}</strong> · {invite.email}
+              {invite.organizationId && <> · {invite.role || 'member'}</>}
+              {invite.projectRole && <> · {invite.projectRole} access to {invite.projectName}</>}
               <p className="note">Expires {new Date(Number(invite.expiresAt.microsSinceUnixEpoch / 1000n)).toLocaleString()}</p>
-              {invite.email === data.profile?.email && <button onClick={() => void run(() => api().acceptInvitation({ invitationId: invite.id }))}>Accept invitation to {invite.organizationName}</button>}
-              {data.organizations.some(item => item.id === invite.organizationId && ['owner', 'admin'].includes(item.role)) && <button className="secondary" onClick={() => void run(() => api().revokeInvitation({ invitationId: invite.id }))}>Revoke invitation for {invite.email}</button>}
+              {invite.email === data.profile?.email && <button type="button" onClick={() => void run(() => api().acceptInvitation({ invitationId: invite.id }))}>
+                {invite.organizationId ? `Accept invitation to ${invite.organizationName}` : `Accept project invitation to ${invite.projectName}`}
+              </button>}
+              {(data.organizations.some(item => item.id === invite.organizationId && ['owner', 'admin'].includes(item.role)) ||
+                (!invite.organizationId && data.projects.some(item => item.id === invite.projectId && item.canManage))) &&
+                <button type="button" className="secondary" onClick={() => void run(() => api().revokeInvitation({ invitationId: invite.id }))}>Revoke invitation for {invite.email}</button>}
             </li>)}</ul>
           </section>
-          </TabsContent></Tabs>
+          </section>}
+          {route.page === 'settings' && <section className="route-page" aria-label="Project settings">
+          {project && <>
+            <section className="panel"><h2>Project settings</h2>
+              <p>{project.organizationId ? 'Shared through ' + (data.organizations.find(item => item.id === project.organizationId)?.name ?? 'an organization') : 'Private project — no organization'}</p>
+              <p className="muted">Your project access: {project.permission}{project.ownership === 'organization' ? ' · Existing organization-owned project' : ''}</p>
+              {project.permission === 'editor' && <form onSubmit={e => form(e, async () => { await api().renameProject({ projectId: project.id, name: projectName }); setProjectName(''); })}>
+                <label>Project name<input aria-label="New project name" required maxLength={80} value={projectName} onChange={e => setProjectName(e.target.value)} /></label><button>Rename project</button>
+              </form>}
+            </section>
+            <ProjectDetails key={'details:' + project.id.toString()} project={project} />
+            <section className="panel"><div className="settings-reference-summary">
+              <div><strong>Saved References ({data.references.filter(row => row.projectId === project.id).length} / 20 files · 128 KiB per-file cap)</strong>
+                <p className="note">{data.references.filter(row => row.projectId === project.id).map(row => row.filename).join(', ') || 'No references saved yet.'}</p>
+              </div>
+              <button type="button" className="secondary" onClick={() => navigate('references')}>Manage references</button>
+            </div></section>
+            <section className="panel"><h2>Sharing</h2>
+              <p className="note">Manage this project's organization association and member access separately from its technology settings.</p>
+              <button type="button" className="secondary" onClick={() => navigate('sharing')}>Manage sharing</button>
+            </section>
+          </>}
+          </section>}
         </fieldset>
-        <footer className="note">Requested technologies describe your future generated libraries. Component generation and previews are not part of this milestone.</footer>
+        {route.page === 'projects' && <footer className="note">Requested technologies describe your project; mock generation and preview fixtures are not real generated output or build verification.</footer>}
       </>}
     </main>
+    <Modal open={activeModal === 'project'} title="Create a project you own" onClose={() => setActiveModal(null)}>
+      {error && <p role="alert" className="error">{error}</p>}
+      <p className="note">Start privately or choose an optional organization space. You can share with selected members later.</p>
+      <form onSubmit={e => form(e, async () => {
+        const previousIds = data.projects.map(row => row.id.toString());
+        await api().createProjectWithDetails({ name: createName, organizationId: BigInt(newOrganization), ...newTechnology });
+        setAwaitingProject(previousIds);
+        setCreateName('');
+      }, () => setActiveModal(null))}>
+        <h3>Project details and its technology stack</h3>
+        <label>Project name<input aria-label="Project name" required maxLength={80} value={createName} onChange={e => setCreateName(e.target.value)} /></label>
+        <label>Share through organization<select aria-label="Share through organization" value={newOrganization} onChange={e => setNewOrganization(e.target.value)}>
+          <option value="0">Private — no organization</option>{data.organizations.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}
+        </select></label>
+        <p className="note">Selecting an organization does not give its members or admins access. Grant access to specific members after creating the project.</p>
+        <label>Technology starting point<select aria-label="Technology starting point" value={profile} onChange={e => {
+          const value = e.target.value; setProfile(value);
+          setNewTechnology(value === 'blazor-bootstrap' ? { framework: 'Blazor', language: 'C#', styling: 'Bootstrap', libraries: '', versions: '' }
+            : value === 'react-ts-tailwind-shadcn' ? { framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' } : emptyTechnology);
+        }}><option value="">Custom / undecided</option>{Object.entries(profiles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        {Object.entries(technologyLabels).map(([field, label]) => <label key={field}>{label}<input aria-label={'Requested ' + label} maxLength={1000} value={newTechnology[field as keyof Technology]} onChange={e => setNewTechnology(old => ({ ...old, [field]: e.target.value }))} /></label>)}
+        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setActiveModal(null)}>Cancel</button><button disabled={pending}>Create project</button></div>
+      </form>
+      {localStorage.getItem('complix.local.identity.v1') && <button className="secondary" disabled={pending} onClick={() => void run(importLegacy)}>Import previous local project as private</button>}
+    </Modal>
+    {project?.canManage && <Modal open={activeModal === 'projectInvitation'} title={'Invite someone to ' + project.name} onClose={() => setActiveModal(null)}>
+      {error && <p role="alert" className="error">{error}</p>}
+      <form onSubmit={e => form(e, async () => {
+        if (projectInviteMode === 'project') {
+          await api().inviteProject({ projectId: project.id, email: inviteEmail, projectRole: inviteAccess });
+        } else if (projectOrganization && projectOrganizationManager) {
+          const includeProject = projectInviteMode === 'organizationProject';
+          await api().inviteMember({ organizationId: projectOrganization.id, email: inviteEmail, role: inviteRole,
+            projectRole: includeProject ? inviteAccess : '', projectId: includeProject ? project.id : undefined });
+        } else throw new Error('You no longer have permission to invite into this organization.');
+        setInviteEmail('');
+      }, () => setActiveModal(null))}>
+        <label htmlFor="project-invite-email">Invite email<input id="project-invite-email" required type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} /></label>
+        {projectOrganization && projectOrganizationManager && <label htmlFor="project-invite-mode">Invitation access<select id="project-invite-mode" value={projectInviteMode} onChange={e => setProjectInviteMode(e.target.value as typeof projectInviteMode)}>
+          <option value="project">This project only</option>
+          <option value="organization">Organization only</option>
+          <option value="organizationProject">Organization and this project</option>
+        </select></label>}
+        {projectInviteMode !== 'project' && projectOrganization && projectOrganizationManager &&
+          <label htmlFor="project-invite-org-role">Organization role<select id="project-invite-org-role" value={inviteRole} onChange={e => setInviteRole(e.target.value)}>
+            <option value="member">Member</option>{projectOrganization.role === 'owner' && <option value="admin">Admin</option>}
+          </select></label>}
+        {projectInviteMode !== 'organization' && <label htmlFor="project-invite-access">Project access<select id="project-invite-access" required value={inviteAccess} onChange={e => setInviteAccess(e.target.value)}>
+          <option value="viewer">Viewer</option><option value="editor">Editor</option>
+        </select></label>}
+        <p className="note">Invitations expire after seven days. Project-only access does not add organization membership. No email is sent; share the app address with the recipient.</p>
+        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setActiveModal(null)}>Cancel</button><button disabled={pending}>Create invitation</button></div>
+      </form>
+    </Modal>}
+    <Modal open={activeModal === 'organization'} title="Create organization" onClose={() => setActiveModal(null)}>
+      {error && <p role="alert" className="error">{error}</p>}
+      <form onSubmit={e => form(e, async () => { await api().createOrganization({ name: orgName }); setOrgName(''); }, () => setActiveModal(null))}>
+        <label htmlFor="organization-name">Organization name<input id="organization-name" required maxLength={80} value={orgName} onChange={e => setOrgName(e.target.value)} /></label>
+        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setActiveModal(null)}>Cancel</button><button disabled={pending}>Create organization</button></div>
+      </form>
+    </Modal>
+    {org && manager && <Modal open={activeModal === 'invitation'} title={'Invite a member to ' + org.name} onClose={() => setActiveModal(null)}>
+      {error && <p role="alert" className="error">{error}</p>}
+      <form onSubmit={e => form(e, async () => {
+        await api().inviteMember({ organizationId: org.id, email: inviteEmail, role: inviteRole, projectRole: inviteAccess, projectId: projectContext?.canManage && projectContext.organizationId === org.id ? projectContext.id : undefined });
+        setInviteEmail('');
+      }, () => setActiveModal(null))}>
+        <label htmlFor="invite-email">Invite email<input id="invite-email" required type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} /></label>
+        <label htmlFor="invite-role">Organization role<select id="invite-role" value={inviteRole} onChange={e => setInviteRole(e.target.value)}><option value="member">Member</option>{org.role === 'owner' && <option value="admin">Admin</option>}</select></label>
+        <label htmlFor="invite-access">Initial project access<select id="invite-access" value={inviteAccess} onChange={e => setInviteAccess(e.target.value)}><option value="">No access</option>{projectContext?.canManage && projectContext.organizationId === org.id && <><option value="viewer">Viewer</option><option value="editor">Editor</option></>}</select></label>
+        <p className="note">The invitation expires after seven days. No email is sent; share the app address with the recipient.</p>
+        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setActiveModal(null)}>Cancel</button><button disabled={pending}>Create invitation</button></div>
+      </form>
+    </Modal>}
   </>;
 }

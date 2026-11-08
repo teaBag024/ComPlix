@@ -2,7 +2,7 @@
 
 ComPlix builds reusable UI component libraries. The current increment supports private and shared multi-project workspaces with open-ended requested technologies. React + TypeScript is the builder stack; generated output profiles remain **React + TypeScript + Tailwind + shadcn/ui** and **Blazor + Bootstrap**.
 
-Implemented: autosaved technical/style questionnaire and project design guidance, verified profile capture, organization creation/switching, multiple personally owned projects with optional organization sharing, editable technology details, in-app invitations, owner/admin management, editor/viewer grants, shared live edits, access revocation and an explicit transfer path for old local projects. Component generation, uploads, exports and previews remain outside this increment.
+Implemented: mock generation job/Library inspection flow (not real AI/build execution), project reference uploads/plain-text previews, autosaved technical/style questionnaire and project design guidance, verified profile capture, organization creation/switching, multiple personally owned projects with optional organization sharing, editable technology details, in-app invitations, owner/admin management, editor/viewer grants, shared live edits, access revocation and an explicit transfer path for old local projects. Component generation, generated-library exports and executable component previews remain outside this increment.
 
 ## Setup (Windows x64)
 
@@ -107,6 +107,7 @@ For real-provider acceptance: sign in with Google, verify the name/email and wor
 - src/useWorkspace.ts: typed connection/subscription lifecycle.
 - src/OrganizationWorkspace.tsx: organization, project and access UI.
 - src/ProjectDetails.tsx: requested framework/language/styling/library/version details and revision-checked edits.
+- src/ProjectReferences.tsx and shared/referenceFiles.ts: scoped reference intake UI and shared validation.
 - src/ProjectGuidance.tsx: autosaved questionnaire, design document text preview and draft conflict recovery.
 - src/module_bindings/: generated from the module; regenerate instead of editing.
 - tests/foundation.spec.ts and tests/fixtures/: live regression tests.
@@ -131,7 +132,7 @@ Open an organization project and fill in **Questionnaire and design guidance**. 
 
 Editors can update answers; viewers see saved text read-only. Another clean tab receives updates through subscriptions. Concurrent edits stop with a conflict instead of silently overwriting saved text: compare the latest saved answers, copy anything to keep, then explicitly discard the draft and load latest. Invalid/rejected saves show an error and retain the draft. Unsaved drafts are kept in tab session storage when available, scoped to server/database/identity/project, so reload/reconnection can recover them; closing the tab or unavailable browser storage can lose unsaved work. Only confirmed server saves survive backend restarts. There is no offline save queue or automatic merging.
 
-**Design guidance document** shows a plain-text Markdown representation of current answers, including unsaved text. It has no separately editable copy and does not claim generated code implements these preferences. Formal preference statuses/history, contradiction detection, uploads, exports and generation remain future work.
+**Design guidance document** shows a plain-text Markdown representation of current answers, including unsaved text. It has no separately editable copy and does not claim generated code implements these preferences. Formal preference statuses/history, contradiction detection, binary-document extraction, exports and generation remain future work.
 
 Validation commands remain `npm.cmd run build` and `npm.cmd test`. The integration suite covers guidance isolation, editor/viewer enforcement, stale revisions, invalid answers, shared subscription updates, autosave/reload, draft conflict/error recovery and restart persistence.
 
@@ -159,8 +160,131 @@ Run `npm.cmd run build` and `npm.cmd test` to validate. The suite covers no-org/
 
 ## Workspace navigation
 
-Use the workspace tabs to switch between Projects, Design guidance, Technologies,
-Sharing, Organization, and Invitations. The active-project selector stays above
-all tabs. Guidance and technology edits remain mounted when changing tabs, so
-switching sections retains draft text and guidance autosave continues. Tabs support
-arrow-key navigation and wrap on smaller screens; forms use two columns where space allows.
+The workspace follows [the frontend design guide](./docs/frontend-design-guide.html)
+with separate URL-backed pages rather than tabs. Sign-in opens `/projects`;
+opening a project enters `/projects/:id/components`, with dedicated
+`/projects/:id/settings` and `/projects/:id/guidance` pages. Reference
+management and sharing are separate project pages linked from Settings.
+Organizations and invitations have their own `/organizations` and `/invitations`
+pages. Browser back/forward navigation is supported. Project pages keep a project
+picker and clear navigation back to the project grid. Light mode is the default;
+the header theme toggle saves the preference for future visits.
+
+## Workspace ownership and shared spaces
+
+Projects shows **Projects you own** separately from **Projects shared with you**. Each card shows that project's requested stack, ownership and private/organization-space context. Shared projects can be filtered by organization. Opening a card enters that project's component workspace.
+
+Organizations are optional: you may have none or belong to many. The Organizations page lists your spaces and the multiple projects you can access in each. Selecting an organization's project opens that project; it does not merge stacks, transfer ownership or expose ungranted projects. Counts are limited to projects visible to you. Existing organization-owned projects are labeled accordingly.
+
+## Upload project references
+
+With the local server running, publish the updated module and reload the frontend:
+
+```powershell
+$env:PATH = (Join-Path (Get-Location) '.tools/node-v24.22.2-win-x64') + ';' + $env:PATH
+npm.cmd run backend:generate
+npm.cmd run backend:publish
+npm.cmd run dev -- --port 5173 --strictPort
+```
+
+If the frontend is already running, reload http://127.0.0.1:5173 instead of starting another instance. Start the server in a separate terminal with `npm.cmd run backend:start` if necessary. No additional service, dependency or credentials are required. The publish helper targets only local complix-local and forbids data deletion.
+
+Select a project, open **Settings** → **Manage references**, choose a purpose and file, then **Upload reference**. Markdown/text and selected source files must be valid readable UTF-8, contain 1 byte to 128 KiB, and use an allowed extension. There are at most 20 references per project, with case-insensitive unique filenames. The picker lists allowed extensions; PDFs, images, archives, environment files and URL retrieval are not supported. Never upload API keys/credentials.
+
+Saved originals, decoded text and metadata are private SpacetimeDB records. Collaborators with project access see updates live; editors can upload/remove, viewers can read. Preview displays plain text, including HTML/Markdown source, and never executes uploaded code. Ready means text is readable, not that AI has interpreted it. Existing guidance and library code are not modified. Failed uploads retain existing references; removal requires confirmation and has no undo. Original bytes are retained in the authorized data view, with no separate original-download UI yet.
+
+Check using `npm.cmd run build` and `npm.cmd test`. Limits and file rules live in shared/referenceFiles.ts; UI in src/ProjectReferences.tsx; authorization/storage in the module. Larger/binary formats, extraction workers, semantic indexing, AI generation and reference precedence are future work. Workspace subscriptions currently load references for all accessible projects; pagination and lazy content loading are not implemented.
+
+## Library: mocked generation workflow
+
+Select a project and open **Library**. This milestone runs locally with **no NVIDIA/E2B account or API key**. Queue a mock component request, optionally select saved project references, then choose **Run mock pipeline**. Watch subscription-driven progress; inspect Source, Documentation, Validation and the interactive fixture Preview. Choose a mock failure outcome to exercise failure handling. Reloading preserves history; resume/cancel an interrupted job explicitly. A failed attempt leaves earlier candidates and saved project content unchanged.
+
+The preview is a trusted HTML fixture in an opaque-origin sandboxed iframe with restrictive CSP, not generated framework code and not an E2B sandbox. Build/test stages are simulated. No output is marked current, validated or export-ready. No host command, dependency installation, provider call or real component build runs. Any requested project stack can be recorded; no generation support is claimed by the fixture.
+
+With the local backend running:
+
+```powershell
+$env:PATH = (Join-Path (Get-Location) '.tools/node-v24.22.2-win-x64') + ';' + $env:PATH
+npm.cmd run backend:generate
+npm.cmd run backend:publish
+npm.cmd run dev -- --port 5173 --strictPort
+```
+
+Reload the existing frontend if it is already running. Publish targets local complix-local and forbids data deletion. The local helper defaults GENERATION_MODE to mock; set `$env:GENERATION_MODE = 'disabled'` before publication to disable job creation/advancement. This is a backend setting, never a client-controlled validation switch. No new dependency was installed.
+
+Job context captures saved technology details/guidance and selected references, capped at 64 KiB. Requests allow 4000 characters; history has 20 jobs/project with one active job at a time. Editors create/run/cancel/delete; viewers inspect authorized history. Terminal job deletion removes saved context/mock artifacts and frees a history slot. Removing a source reference does not remove its copies in existing job history. Context changes stop an active attempt rather than silently validating stale inputs.
+
+Run `npm.cmd run build` and `npm.cmd test`. Provider adapters under generation/ have mocked tests only. NVIDIA draft generation is now available as described below. E2B SDK provisioning/protected-preview routing, toolchain preparation, compiler/interaction checks, artifact promotion and recovery remain future integration work. See docs/generation-sandbox-plan.md for the proposed live boundary.
+
+
+## Built-in ComPlix chat (operator setup)
+
+Users sign in, open a project, and use **Chat with ComPlix** in **Components**. Users never provide API keys or choose a provider. Chat replies and draft files are saved privately in SpacetimeDB and shared only with authorized project collaborators. Editors can send; viewers can read. Selected reference documents, saved guidance/technologies, the latest draft file set and up to six recent successful turns provide context. Chat can discuss requirements without returning code. Generated files remain unverified; no actual build, executable preview or promotion is connected yet.
+
+Gemini coordinates discussion and calls Nemotron only when files need changing. As the ComPlix operator, enter both provider keys once in the ignored file `.local/backend.env` (a blank template has been created). Keep it private:
+
+```dotenv
+GEMINI_API_KEY=<your-operator-Gemini-key>
+GEMINI_MODEL=gemini-3.8-flash
+NVIDIA_API_KEY=<your-operator-NVIDIA-key>
+NVIDIA_MODEL=nvidia/nemotron-3.5-super-vl-120b-a12b
+```
+
+The placeholder above is documentation only; replace it inside the private file. Never put the key in frontend configuration, VITE_ variables, source code, screenshots or chat. The backend publish helper reads this file only for local publication and forwards only GEMINI_API_KEY, GEMINI_MODEL, NVIDIA_API_KEY and NVIDIA_MODEL through the CLI process environment, without printing their values. SpacetimeDB retains the operator secret in its protected database environment; it is not an ordinary application row or client parameter. Database operators and local machine administrators are trusted. An existing process environment value takes precedence over the file.
+
+Start the backend if it is not already running:
+
+```powershell
+$env:PATH = (Join-Path (Get-Location) '.tools/node-v24.22.2-win-x64') + ';' + $env:PATH
+npm.cmd run backend:start
+```
+
+In another terminal, publish the configuration and start the frontend:
+
+```powershell
+$env:PATH = (Join-Path (Get-Location) '.tools/node-v24.22.2-win-x64') + ';' + $env:PATH
+npm.cmd run backend:publish
+npm.cmd run dev -- --port 5173 --strictPort
+```
+
+Reload an existing frontend instead of starting a second copy. Use http://127.0.0.1:5173 for the configured sign-in callback. Publishing targets only local complix-local, forbids data deletion, and preserves unspecified stored configuration. Without both configured keys, chat shows an operator-configuration message and disables sending. No E2B account is needed for chat. Setting `$env:NVIDIA_ENABLED = 'false'` before publication disables live chat. Removing the key from the private file alone does not delete the stored database value; revoke it with its provider or explicitly unset GEMINI_API_KEY/NVIDIA_API_KEY through SpacetimeDB administration.
+
+Gemini receives the authorized project snapshot when an editor sends a message. Nemotron receives that snapshot plus bounded change instructions only if Gemini requests the generation tool for a supported adapter. Each turn uses at most two Gemini calls and one Nemotron call; discussion uses one Gemini call. Both providers spend the operator's quota. Defaults: five new requests per identity per minute, one active job per project, 4000-character messages, 64 KiB context, 2048 output tokens per Gemini call, 4096 Nemotron output tokens, 15-second Gemini and 35-second Nemotron HTTP deadlines, no automatic retry. Gemini defaults to Flash with LOW thinking for Gemini 3 models. Usage counters survive deletion of history. Twenty jobs/turns per project is the current prototype history limit; deleting a terminal turn removes that part of the conversation/context and frees a slot. These limits are not a global billing ceiling. Interrupted requests may require cancellation; cancellation discards late results but cannot refund or guarantee stopping provider usage.
+
+Provider credentials and models are backend configuration only. generateProjectChat is the coordinated entry point; the former direct generateNvidiaDraft procedure has been removed, with historical NVIDIA job data retained. The procedure accepts project ID, request ID, message and selected reference IDs. It enforces project permissions before provider use and before accepting a result. Only sanitized errors and bounded source files/replies reach clients. Mock tools remain under **Developer mock workflow**, clearly separate from built-in chat.
+
+Validation commands:
+
+```powershell
+npm.cmd run build
+npm.cmd run backend:build
+npm.cmd test
+```
+
+Tests use synthetic operator credentials and a transport-instrumented ignored module copy; production source has no mock endpoint switch. Released SpacetimeDB blocks outbound loopback HTTP, so these checks do not prove real Gemini/NVIDIA responses or production transport. The operator's live account/model test remains to be run. E2B builds, protected previews, dependency/toolchain support, durable orchestration, artifact promotion/recovery and exports remain future work.
+
+If another test process owns the default ports, run an isolated check without stopping it:
+
+```powershell
+$env:COMPLIX_TEST_FRONTEND_PORT = '52173'
+$env:COMPLIX_TEST_BACKEND_PORT = '52100'
+$env:COMPLIX_TEST_DATABASE = 'complix-chat-check'
+npm.cmd test
+```
+
+These variables affect test processes only. Choose other unused ports if these are occupied.
+
+Slow replies: chat currently displays a complete response, not streamed tokens. It shows elapsed waiting time and Cancel reply. The coordinated path has at most 65 seconds of provider HTTP budgets; client confirmation stops waiting after 75 seconds, and a private backend job deadline marks abandoned active requests failed at 90 seconds. Deadlines run without a browser while the server is running. Reloading also cleans up older stale jobs created before this recovery fix. A deadline/cancel never automatically sends another paid request and cannot refund or guarantee interrupting upstream usage. Gemini 3 uses LOW thinking; Nemotron reasoning is disabled. Real response time still depends on both providers and request size.
+
+
+### Editing generated drafts
+
+Open a generated candidate under Components, choose Code and select a file. Editors can change any existing source, documentation or example file; changes autosave after a short pause to a project-scoped, versioned draft. Wait for Draft saved before closing the browser. Viewers and illustrative/mock fixtures are read-only. The current editor is a plain text multi-file editor; it does not provide IDE completion or execute code.
+
+Chat uses the selected candidate's saved edits and waits for autosave before sending. A new response creates another candidate; failures and stale responses never overwrite the edited source candidate. Conflicts preserve local text and offer retry for save failures or an explicitly labeled discard/load action. Navigation waits for draft save and stays in place on errors; browser closing warns about unsaved edits. Drafts are still unverified: the Gemini coordinator is connected in source, but actual React/Blazor builds/previews and promotion remain unconnected.
+
+The module/bindings change requires the usual data-preserving local backend publication before reloading this frontend (`npm.cmd run backend:publish`). Development tests publish only to disposable isolated test databases; no application publication is implied.
+
+Gemini REST function calls are limited to `generate_component_changes({instructions})`. Project/draft identity and file access come from the authorized server snapshot, never tool arguments. No generated command is executed. Cancellation/access/source revision are rechecked before the generator, before final summarization and before saving. Thought signatures are returned to Gemini in memory for the tool round trip and are not persisted or shown as conversation. Unknown/multiple/repeated tools, truncated output, credential echoes and provider errors fail safely. Unsupported targets can be discussed but cannot invoke generation through a generic fallback.
+
+Official references: [Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling), [Flash model](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash), [thinking levels](https://ai.google.dev/gemini-api/docs/thinking). Account/model availability and live responses remain unverified.

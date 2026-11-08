@@ -10,6 +10,59 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const ComponentDraft = __t.object("ComponentDraft", {
+  jobId: __t.u64(),
+  projectId: __t.u64(),
+  revision: __t.u64(),
+  get files() {
+    return __t.array(DraftFile);
+  },
+  updatedBy: __t.identity(),
+  updatedAt: __t.timestamp(),
+});
+export type ComponentDraft = __Infer<typeof ComponentDraft>;
+
+export const DraftFile = __t.object("DraftFile", {
+  path: __t.string(),
+  content: __t.string(),
+});
+export type DraftFile = __Infer<typeof DraftFile>;
+
+export const GenerationConfiguration = __t.object("GenerationConfiguration", {
+  mode: __t.string(),
+  nvidiaEnabled: __t.bool(),
+  chatEnabled: __t.bool(),
+});
+export type GenerationConfiguration = __Infer<typeof GenerationConfiguration>;
+
+export const GenerationDeadline = __t.object("GenerationDeadline", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  jobId: __t.u64(),
+});
+export type GenerationDeadline = __Infer<typeof GenerationDeadline>;
+
+export const GenerationJob = __t.object("GenerationJob", {
+  id: __t.u64(),
+  requestId: __t.string(),
+  projectId: __t.u64(),
+  requestedBy: __t.identity(),
+  request: __t.string(),
+  state: __t.string(),
+  mode: __t.string(),
+  scenario: __t.string(),
+  snapshot: __t.string(),
+  fingerprint: __t.string(),
+  artifacts: __t.string(),
+  diagnostic: __t.string(),
+  createdAt: __t.timestamp(),
+  model: __t.string(),
+});
+export type GenerationJob = __Infer<typeof GenerationJob>;
+
+export const GenerationSettings = __t.object("GenerationSettings", {});
+export type GenerationSettings = __Infer<typeof GenerationSettings>;
+
 export const Invitation = __t.object("Invitation", {
   id: __t.u64(),
   organizationId: __t.u64(),
@@ -24,7 +77,9 @@ export type Invitation = __Infer<typeof Invitation>;
 export const InvitationSummary = __t.object("InvitationSummary", {
   id: __t.u64(),
   organizationId: __t.u64(),
+  projectId: __t.u64(),
   organizationName: __t.string(),
+  projectName: __t.string(),
   email: __t.string(),
   role: __t.string(),
   projectRole: __t.string(),
@@ -61,6 +116,13 @@ export const Membership = __t.object("Membership", {
   role: __t.string(),
 });
 export type Membership = __Infer<typeof Membership>;
+
+export const ModelUsage = __t.object("ModelUsage", {
+  identity: __t.identity(),
+  windowStart: __t.timestamp(),
+  requests: __t.u32(),
+});
+export type ModelUsage = __Infer<typeof ModelUsage>;
 
 export const MyInvitations = __t.object("MyInvitations", {});
 export type MyInvitations = __Infer<typeof MyInvitations>;
@@ -121,11 +183,25 @@ export const ProjectGuidance = __t.object("ProjectGuidance", {
 });
 export type ProjectGuidance = __Infer<typeof ProjectGuidance>;
 
+export const ProjectReference = __t.object("ProjectReference", {
+  id: __t.u64(),
+  projectId: __t.u64(),
+  filename: __t.string(),
+  purpose: __t.string(),
+  bytes: __t.byteArray(),
+  content: __t.string(),
+  uploadedBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type ProjectReference = __Infer<typeof ProjectReference>;
+
 export const ProjectShareSummary = __t.object("ProjectShareSummary", {
   key: __t.string(),
   projectId: __t.u64(),
   user: __t.identity(),
   role: __t.string(),
+  name: __t.string(),
+  email: __t.string(),
 });
 export type ProjectShareSummary = __Infer<typeof ProjectShareSummary>;
 
@@ -154,11 +230,20 @@ export const UserProfile = __t.object("UserProfile", {
 });
 export type UserProfile = __Infer<typeof UserProfile>;
 
+export const VisibleComponentDrafts = __t.object("VisibleComponentDrafts", {});
+export type VisibleComponentDrafts = __Infer<typeof VisibleComponentDrafts>;
+
+export const VisibleGenerationJobs = __t.object("VisibleGenerationJobs", {});
+export type VisibleGenerationJobs = __Infer<typeof VisibleGenerationJobs>;
+
 export const VisibleGuidance = __t.object("VisibleGuidance", {});
 export type VisibleGuidance = __Infer<typeof VisibleGuidance>;
 
 export const VisibleProjects = __t.object("VisibleProjects", {});
 export type VisibleProjects = __Infer<typeof VisibleProjects>;
+
+export const VisibleReferences = __t.object("VisibleReferences", {});
+export type VisibleReferences = __Infer<typeof VisibleReferences>;
 
 export const WorkspaceProject = __t.object("WorkspaceProject", {
   id: __t.u64(),
