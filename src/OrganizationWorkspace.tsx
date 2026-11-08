@@ -3,16 +3,18 @@ import { Button } from './components/Button';
 import { ProjectLibrary } from './ProjectLibrary';
 import { ProjectReferences } from './ProjectReferences';
 import { ProjectCard, projectStack } from './components/ProjectCard';
-import { ProjectDetails, emptyTechnology, technologyLabels, type Technology } from './ProjectDetails';
+import { ProjectDetails } from './ProjectDetails';
+import { ProjectSetup, type SetupStep } from './ProjectSetup';
+import { StackPicker, defaultStackChoice, toTechnology, type StackChoice } from './StackPicker';
 import { ProjectGuidance } from './ProjectGuidance';
 import { Modal } from './components/Modal';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { DbConnection, tables } from './module_bindings';
 import { useWorkspace, endpoint, database } from './useWorkspace';
-import { profiles } from './profiles';
 
-type WorkspacePage = 'projects' | 'library' | 'settings' | 'guidance' | 'references' | 'sharing' | 'organization' | 'organizationOverview' | 'organizationProjects' | 'organizationMembers' | 'organizationSettings' | 'invitations';
-type WorkspaceRoute = { page: WorkspacePage; projectId?: string; organizationId?: string };
+type WorkspacePage = 'projects' | 'library' | 'setup' | 'settings' | 'guidance' | 'references' | 'sharing' | 'organization' | 'organizationOverview' | 'organizationProjects' | 'organizationMembers' | 'organizationSettings' | 'invitations';
+type WorkspaceRoute = { page: WorkspacePage; projectId?: string; organizationId?: string; step?: SetupStep };
+const setupSteps: SetupStep[] = ['questionnaire', 'references', 'components', 'progress'];
 
 function readRoute(pathname: string): WorkspaceRoute {
   const parts = pathname.split('/').filter(Boolean);
@@ -28,6 +30,7 @@ function readRoute(pathname: string): WorkspaceRoute {
   if (parts[0] === 'invitations') return { page: 'invitations' };
   if (parts[0] === 'projects' && parts.length > 1 && /^\d+$/.test(parts[1])) {
     const page = parts[2];
+    if (page === 'setup') return { page: 'setup', projectId: parts[1], step: setupSteps.find(step => step === parts[3]) ?? 'questionnaire' };
     if (page === 'settings' || page === 'guidance' || page === 'references' || page === 'sharing') {
       return { page, projectId: parts[1] };
     }
@@ -36,7 +39,7 @@ function readRoute(pathname: string): WorkspaceRoute {
   return { page: 'projects' };
 }
 
-function pathFor(page: WorkspacePage, projectId?: string, organizationId?: string) {
+function pathFor(page: WorkspacePage, projectId?: string, organizationId?: string, step: SetupStep = 'questionnaire') {
   if (page === 'projects') return '/projects';
   if (page === 'organization') return '/organizations';
   if (page === 'invitations') return '/invitations';
@@ -46,6 +49,7 @@ function pathFor(page: WorkspacePage, projectId?: string, organizationId?: strin
     return `/organizations/${organizationId}${suffix}`;
   }
   if (!projectId) return '/projects';
+  if (page === 'setup') return `/projects/${projectId}/setup/${step}`;
   return page === 'library' ? `/projects/${projectId}/components` : `/projects/${projectId}/${page}`;
 }
 
@@ -59,7 +63,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
   const [sharedOrganization, setSharedOrganization] = useState('');
   const [activeModal, setActiveModal] = useState<'project' | 'organization' | 'invitation' | 'projectInvitation' | null>(null);
   const [selectedProject, setSelectedProject] = useState(() => sessionStorage.getItem('complix.activeProject') ?? '');
-  const [newTechnology, setNewTechnology] = useState<Technology>(emptyTechnology);
+  const [newStack, setNewStack] = useState<StackChoice>(defaultStackChoice);
   const [awaitingProject, setAwaitingProject] = useState<string[]>();
   const [newOrganization, setNewOrganization] = useState('0');
   const [association, setAssociation] = useState('0');
@@ -70,7 +74,6 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
   const [renameOrgName, setRenameOrgName] = useState('');
   const [projectName, setProjectName] = useState('');
   const [createName, setCreateName] = useState('');
-  const [profile, setProfile] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [inviteAccess, setInviteAccess] = useState('');
@@ -82,15 +85,16 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
     document.documentElement.dataset.theme = next;
     setTheme(next);
   };
-  const navigate = async (page: WorkspacePage, projectId?: string, organizationId?: string) => {
+  const navigate = async (page: WorkspacePage, projectId?: string, organizationId?: string, step?: SetupStep) => {
     try { await draftGuard.current?.(); }
     catch { setError('Save or resolve your draft edits before leaving the component workspace.'); return; }
-    const nextProjectId = ['library', 'settings', 'guidance', 'references', 'sharing'].includes(page) ? projectId ?? route.projectId : undefined;
+    const nextProjectId = ['library', 'setup', 'settings', 'guidance', 'references', 'sharing'].includes(page) ? projectId ?? route.projectId : undefined;
     const nextOrganizationId = ['organizationOverview', 'organizationProjects', 'organizationMembers', 'organizationSettings'].includes(page)
       ? organizationId ?? route.organizationId : undefined;
-    const nextPath = pathFor(page, nextProjectId, nextOrganizationId);
+    const nextStep = page === 'setup' ? step ?? 'questionnaire' : undefined;
+    const nextPath = pathFor(page, nextProjectId, nextOrganizationId, nextStep);
     if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath);
-    setRoute({ page, projectId: nextProjectId, organizationId: nextOrganizationId });
+    setRoute({ page, projectId: nextProjectId, organizationId: nextOrganizationId, step: nextStep });
   };
   const latestRoute = useRef(route);
   latestRoute.current = route;
@@ -100,7 +104,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
       try { await draftGuard.current?.(); setRoute(next); }
       catch {
         const previous = latestRoute.current;
-        window.history.replaceState({}, '', pathFor(previous.page, previous.projectId, previous.organizationId));
+        window.history.replaceState({}, '', pathFor(previous.page, previous.projectId, previous.organizationId, previous.step));
         setError('Save or resolve your draft edits before leaving the component workspace.');
       }
     };
@@ -131,7 +135,17 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
   const projectOrganizationManager = projectOrganization?.role === 'owner' || projectOrganization?.role === 'admin';
   const ownedProjects = data.projects.filter(item => item.ownership === 'personal' && !!data.profile && item.owner.isEqual(data.profile.identity));
   const sharedProjects = data.projects.filter(item => !ownedProjects.some(owned => owned.id === item.id));
-  const openProject = (id: bigint) => navigate('library', id.toString());
+  const openProject = (id: bigint) => {
+    const target = data.projects.find(item => item.id === id);
+    if (target?.setupState === 'setup') return navigate('setup', id.toString(), undefined, 'questionnaire');
+    if (target?.setupState === 'generating') return navigate('setup', id.toString(), undefined, 'progress');
+    return navigate('library', id.toString());
+  };
+  // Projects still in the wizard always show setup; other project pages wait until it is finished.
+  const inSetup = !!project && project.setupState === 'setup';
+  useEffect(() => {
+    if (inSetup && route.page !== 'setup' && project) void navigate('setup', project.id.toString(), undefined, 'questionnaire');
+  }, [inSetup, route.page, project?.id]);
   const cards = (items: typeof data.projects) => <div className="project-grid">{items.map(item => <ProjectCard key={item.id.toString()}
     project={item} owned={ownedProjects.some(owned => owned.id === item.id)} active={item.id === project?.id}
     organization={data.organizations.find(space => space.id === item.organizationId)?.name} open={() => openProject(item.id)} />)}</div>;
@@ -213,7 +227,9 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
         }}>
           {!projectContext && <option value="">Choose a project</option>}{data.projects.map(item => <option key={item.id.toString()} value={item.id.toString()} data-testid={project?.id === item.id ? 'project-name' : undefined}>{item.name}</option>)}</select></label>}
       </div>
-      {project
+      {project && inSetup
+        ? <nav className="project-page-nav" aria-label="Project pages"><Badge>Project setup</Badge></nav>
+        : project
         ? <nav className="project-page-nav" aria-label="Project pages">
           <Button type="button" aria-current={route.page === 'library' ? 'page' : undefined} onClick={() => navigate('library')}>Components</Button>
           <Button type="button" aria-current={route.page === 'guidance' ? 'page' : undefined} onClick={() => navigate('guidance')}>Design guidance</Button>
@@ -283,7 +299,15 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
             identity={data.profile!.identity.toHexString()} editable={project.permission === 'editor'}
             saved={data.guidance.find(row => row.projectId === project.id)} connection={connection} />}
           </section>}
+          {route.page === 'setup' && <section className="route-page" aria-label="Setup">
+          {project && connection && <ProjectSetup key={'setup:' + project.id.toString()} project={project} step={route.step ?? 'questionnaire'}
+            go={step => void navigate('setup', project.id.toString(), undefined, step)} openLibrary={() => void navigate('library', project.id.toString())}
+            guidance={data.guidance.find(row => row.projectId === project.id)} references={data.references.filter(row => row.projectId === project.id)}
+            tasks={data.starterTasks.filter(row => row.projectId === project.id)} components={data.components.filter(row => row.projectId === project.id)}
+            chatEnabled={data.chatEnabled} connection={connection} />}
+          </section>}
           {route.page === 'library' && <section className="route-page" aria-label="Components">
+          {project?.setupState === 'generating' && <p role="status" className="setup-banner">Starter components are still being generated. <Button type="button" variant="secondary" onClick={() => void navigate('setup', project.id.toString(), undefined, 'progress')}>View progress</Button></p>}
           {project && connection && <ProjectLibrary key={'library:' + project.id.toString()} projectId={project.id} target={project} instructions={data.instructions.filter(row => row.projectId === project.id)} draftGuard={draftGuard} editable={project.permission === 'editor'}
             components={data.components.filter(row => row.projectId === project.id)} messages={data.messages.filter(row => row.projectId === project.id)} drafts={data.drafts.filter(row => row.projectId === project.id)} previews={data.previews.filter(row => row.projectId === project.id)} jobs={data.jobs.filter(row => row.projectId === project.id)} references={data.references.filter(row => row.projectId === project.id)} mode={data.generationMode} chatEnabled={data.chatEnabled} connection={connection} />}
           </section>}
@@ -291,6 +315,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
           {project && connection && <ProjectReferences key={'references:' + project.id.toString()} editable={project.permission === 'editor'}
             references={data.references.filter(row => row.projectId === project.id).map(row => ({ ...row, byteLength: row.bytes.length }))}
             upload={(filename, purpose, bytes) => connection.reducers.uploadReference({ projectId: project.id, filename, purpose, bytes })}
+            uploadPdf={(filename, purpose, bytes, text) => connection.reducers.uploadPdfReference({ projectId: project.id, filename, purpose, bytes, text })}
             remove={referenceId => connection.reducers.removeReference({ referenceId })} />}
           </section>}
           {route.page === 'sharing' && <section className="route-page" aria-label="Project sharing">
@@ -450,7 +475,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
       <p className="note">Start privately or choose an optional organization space. You can share with selected members later.</p>
       <form onSubmit={e => form(e, async () => {
         const previousIds = data.projects.map(row => row.id.toString());
-        await api().createProjectWithDetails({ name: createName, organizationId: BigInt(newOrganization), ...newTechnology });
+        await api().createSetupProject({ name: createName, organizationId: BigInt(newOrganization), ...toTechnology(newStack) });
         setAwaitingProject(previousIds);
         setCreateName('');
       }, () => setActiveModal(null))}>
@@ -460,13 +485,9 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
           <option value="0">Private — no organization</option>{data.organizations.map(item => <option key={item.id.toString()} value={item.id.toString()}>{item.name}</option>)}
         </select></label>
         <p className="note">Selecting an organization does not give its members or admins access. Grant access to specific members after creating the project.</p>
-        <label>Technology starting point<select aria-label="Technology starting point" value={profile} onChange={e => {
-          const value = e.target.value; setProfile(value);
-          setNewTechnology(value === 'blazor-bootstrap' ? { framework: 'Blazor', language: 'C#', styling: 'Bootstrap', libraries: '', versions: '' }
-            : value === 'react-ts-tailwind-shadcn' ? { framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' } : emptyTechnology);
-        }}><option value="">Custom / undecided</option>{Object.entries(profiles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        {Object.entries(technologyLabels).map(([field, label]) => <label key={field}>{label}<input aria-label={'Requested ' + label} maxLength={1000} value={newTechnology[field as keyof Technology]} onChange={e => setNewTechnology(old => ({ ...old, [field]: e.target.value }))} /></label>)}
-        <div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setActiveModal(null)}>Cancel</Button><Button disabled={pending}>Create project</Button></div>
+        <StackPicker value={newStack} onChange={setNewStack} />
+        <p className="note">Next, you'll answer a short design questionnaire or upload a style guide, then ComPlix generates your starter components.</p>
+        <div className="modal-actions"><Button type="button" variant="secondary" onClick={() => setActiveModal(null)}>Cancel</Button><Button disabled={pending}>Create project and start setup</Button></div>
       </form>
       {localStorage.getItem('complix.local.identity.v1') && <Button variant="secondary" disabled={pending} onClick={() => void run(importLegacy)}>Import previous local project as private</Button>}
     </Modal>

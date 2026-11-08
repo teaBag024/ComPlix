@@ -43,8 +43,10 @@ import CreateGenerationReducer from "./create_generation_reducer";
 import CreateOrganizationReducer from "./create_organization_reducer";
 import CreateProjectReducer from "./create_project_reducer";
 import CreateProjectWithDetailsReducer from "./create_project_with_details_reducer";
+import CreateSetupProjectReducer from "./create_setup_project_reducer";
 import DismissEditorInstructionReducer from "./dismiss_editor_instruction_reducer";
 import EnableEditorInstructionReducer from "./enable_editor_instruction_reducer";
+import FinishProjectSetupReducer from "./finish_project_setup_reducer";
 import ImportLegacyProjectReducer from "./import_legacy_project_reducer";
 import InviteMemberReducer from "./invite_member_reducer";
 import InviteProjectReducer from "./invite_project_reducer";
@@ -56,13 +58,17 @@ import RemoveMemberReducer from "./remove_member_reducer";
 import RemoveReferenceReducer from "./remove_reference_reducer";
 import RenameOrganizationReducer from "./rename_organization_reducer";
 import RenameProjectReducer from "./rename_project_reducer";
+import RetryStarterTaskReducer from "./retry_starter_task_reducer";
 import RevokeInvitationReducer from "./revoke_invitation_reducer";
 import SaveComponentDraftReducer from "./save_component_draft_reducer";
 import SaveGuidanceReducer from "./save_guidance_reducer";
+import SaveQuestionnaireReducer from "./save_questionnaire_reducer";
 import SetMemberRoleReducer from "./set_member_role_reducer";
 import SetProjectAccessReducer from "./set_project_access_reducer";
 import SetProjectOrganizationReducer from "./set_project_organization_reducer";
+import StartStarterLibraryReducer from "./start_starter_library_reducer";
 import UpdateProjectDetailsReducer from "./update_project_details_reducer";
+import UploadPdfReferenceReducer from "./upload_pdf_reference_reducer";
 import UploadReferenceReducer from "./upload_reference_reducer";
 
 // Import all procedure arg schemas
@@ -87,6 +93,7 @@ import VisibleGenerationJobsRow from "./visible_generation_jobs_table";
 import VisibleGuidanceRow from "./visible_guidance_table";
 import VisibleProjectsRow from "./visible_projects_table";
 import VisibleReferencesRow from "./visible_references_table";
+import VisibleStarterTasksRow from "./visible_starter_tasks_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -204,6 +211,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleReferencesRow),
+  visibleStarterTasks: __table({
+    name: 'visible_starter_tasks',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleStarterTasksRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -217,8 +231,10 @@ const reducersSchema = __reducers(
   __reducerSchema("create_organization", CreateOrganizationReducer),
   __reducerSchema("create_project", CreateProjectReducer),
   __reducerSchema("create_project_with_details", CreateProjectWithDetailsReducer),
+  __reducerSchema("create_setup_project", CreateSetupProjectReducer),
   __reducerSchema("dismiss_editor_instruction", DismissEditorInstructionReducer),
   __reducerSchema("enable_editor_instruction", EnableEditorInstructionReducer),
+  __reducerSchema("finish_project_setup", FinishProjectSetupReducer),
   __reducerSchema("import_legacy_project", ImportLegacyProjectReducer),
   __reducerSchema("invite_member", InviteMemberReducer),
   __reducerSchema("invite_project", InviteProjectReducer),
@@ -230,13 +246,17 @@ const reducersSchema = __reducers(
   __reducerSchema("remove_reference", RemoveReferenceReducer),
   __reducerSchema("rename_organization", RenameOrganizationReducer),
   __reducerSchema("rename_project", RenameProjectReducer),
+  __reducerSchema("retry_starter_task", RetryStarterTaskReducer),
   __reducerSchema("revoke_invitation", RevokeInvitationReducer),
   __reducerSchema("save_component_draft", SaveComponentDraftReducer),
   __reducerSchema("save_guidance", SaveGuidanceReducer),
+  __reducerSchema("save_questionnaire", SaveQuestionnaireReducer),
   __reducerSchema("set_member_role", SetMemberRoleReducer),
   __reducerSchema("set_project_access", SetProjectAccessReducer),
   __reducerSchema("set_project_organization", SetProjectOrganizationReducer),
+  __reducerSchema("start_starter_library", StartStarterLibraryReducer),
   __reducerSchema("update_project_details", UpdateProjectDetailsReducer),
+  __reducerSchema("upload_pdf_reference", UploadPdfReferenceReducer),
   __reducerSchema("upload_reference", UploadReferenceReducer),
 );
 

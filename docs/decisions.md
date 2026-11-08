@@ -433,6 +433,36 @@ Owner requested extracting common frontend UI into `src/components`. Button, Bad
 
 Owner clarified editor-comment instructions and requested revising realtime-agent-implementation-proposal-v2.md. The proposal now reuses buffered generation, separate candidates and logical cancellation under current architecture/budgets. Marker syntax, automatic versus explicit triggering, idle interval and completed-comment handling remain proposed/open. No implementation or new worker/repair/promotion policy was approved.
 
+## Project setup wizard and starter components - November 8, 2026
+
+**Confirmed by owner:**
+- Setup is required for new projects. At least one of the questionnaire or an uploaded document is required.
+- PDF uploads are supported.
+- Starter components are Button, Text input, KPI card and Modal, selectable with checkboxes.
+- The framework is chosen from a dropdown, with libraries as checkboxes.
+- Starter generation runs server-side, with a loading screen.
+
+**Implementation choices (routine, reversible):**
+- **Stack picker:** an "Other" option with free-text fields keeps requested technologies open-ended, as AGENTS.md requires. Only React + TypeScript and Blazor + C# can generate starters.
+- **Direct API:** `createProjectWithDetails` stays for direct API/test use and creates projects that are ready immediately. The UI uses `createSetupProject`. This only skips a UX step; it has no security impact.
+- **Questionnaire storage:** answers are stored as JSON on the guidance row and rendered into the guidance text fields that generation reads. Later free-text guidance edits do not rewrite the JSON; the text fields are what generation uses.
+- **Starter generation:**
+  - It runs one component at a time through a scheduled procedure, as the user who started it, with edit access rechecked.
+  - It does not count toward that user's 5-per-minute chat window, but it is bounded to at most four components per run.
+  - Failures are isolated and retryable.
+  - Starters are told to be self-contained, with no cross-component imports, because previews build each component on its own. There is no separate theme/tokens component.
+  - Outputs remain unverified drafts; promotion is unchanged.
+- **PDF handling:**
+  - Text is extracted in the browser (pdf.js legacy build, never rendered).
+  - The server stores the original bytes (at most 2 MiB) and the text (at most 32 KiB). It validates the PDF header and the text, but cannot prove the text matches the PDF.
+  - Both are treated as untrusted context.
+  - Scanned or image-only PDFs are rejected.
+
+**Open:**
+- Whether to store bytes for large PDFs at all, since every subscriber of `visible_references` receives them.
+- Whether starters should share a generated theme/tokens foundation once previews can include dependencies.
+
+
 ## Automatic editor instructions - November 8, 2026
 
 Owner authorized implementation and explicitly chose automatic execution after typing stops. Prototype defaults: JSX `@complix` comments in TSX and Razor markup `@* @complix ... *@` comments; two idle seconds after successful autosave while Code is open; retain comments; explicit enable/rerun for inherited or previously processed markers. These syntax/timing/retention details are implementation defaults, not separate owner decisions. Persist instruction-to-job identity and admission blocks, reuse existing Gemini/Nemotron budgets/context/rate limits and preserve newer human drafts. Logical Stop rejects further calls and late results without aborting in-flight HTTP or destroying the working preview. Automatic repair and verified promotion remain future scope.

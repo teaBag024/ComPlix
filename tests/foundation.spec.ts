@@ -89,7 +89,7 @@ async function connect(token: string, register = true): Promise<Session> {
           ctx.subscriptionBuilder().onApplied(() => {
             clearTimeout(timeout); resolve({ conn: ctx, token });
           }).onError(() => { clearTimeout(timeout); reject(new Error('Subscription denied')); })
-            .subscribe(register ? [tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponents, tables.visibleComponentChat, tables.visibleEditorInstructions, tables.generationSettings] : tables.myProject);
+            .subscribe(register ? [tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponents, tables.visibleComponentChat, tables.visibleStarterTasks, tables.visibleEditorInstructions, tables.generationSettings] : tables.myProject);
         };
         void initialize().catch(() => { clearTimeout(timeout); reject(new Error('Profile denied')); });
       }).onConnectError(() => { clearTimeout(timeout); reject(new Error('Connection denied')); })
@@ -132,6 +132,28 @@ async function createBrowserComponent(page: import('@playwright/test').Page, nam
   await expect(page.getByRole('heading', { name: 'Chat: ' + name, exact: true })).toBeVisible();
 }
 
+async function finishBrowserSetup(page: import('@playwright/test').Page) {
+  await expect(page).toHaveURL(/\/projects\/\d+\/setup\/questionnaire$/);
+  await page.getByLabel('Theme', { exact: true }).selectOption('Light');
+  await page.getByRole('button', { name: 'Save and continue', exact: true }).click();
+  await expect(page).toHaveURL(/\/setup\/references$/);
+  await page.getByRole('button', { name: 'Continue to starter components', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish without starter components', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/\d+\/components$/);
+}
+/** A minimal one-page PDF whose text pdf.js can extract. */
+function textPdf(text: string) {
+  const stream = `BT /F1 16 Tf 20 100 Td (${text}) Tj ET`;
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+  let out = '%PDF-1.4\n'; const offsets: number[] = [];
+  objects.forEach((body, index) => { offsets.push(out.length); out += `${index + 1} 0 obj\n${body}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n` + offsets.map(offset => String(offset).padStart(10, '0') + ' 00000 n \n').join('')
+    + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
 async function expandProjectCreation(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: '+ Create project', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Create a project you own' })).toBeVisible();
@@ -160,6 +182,7 @@ test.beforeAll(async () => {
           tx.db.generationJob.id.update({ ...job, diagnostic: 'Unexpected Gemini call after cancellation' });
         });
       }
+      if (snapshot.technologies?.name === 'Failing starter project' && snapshot.component?.name === 'KpiCard' && !snapshot.conversation?.some((message: any) => message.role === 'assistant')) return { status: 503, text: () => '' };
       if (snapshot.request === 'Generate using every project reference' && (!snapshot.references.some((reference: any) => reference.filename === 'design.md' && reference.content.includes('automatic-reference-marker')) || JSON.stringify(snapshot.references).includes('other-project-marker'))) throw new Error('Gemini fixture did not receive only the current project references');
       if ((snapshot.request === 'Token expiry fixture' || snapshot.editorInstruction?.text === 'Slow instruction fixture') && body.contents.length === 1) {
         // The local runtime has no procedure sleep. Test-only read transactions advance wall time.
@@ -409,7 +432,8 @@ test('browser sessions share edits, enforce viewer UI and clear access on member
   await expandProjectCreation(a);
   await a.getByLabel('Share through organization').selectOption({ label: 'Browser Team' });
   await a.getByLabel('Project name', { exact: true }).fill('Browser shared library');
-  await a.getByRole('button', { name: 'Create project', exact: true }).click();
+  await a.getByRole('button', { name: 'Create project and start setup', exact: true }).click();
+  await finishBrowserSetup(a);
   await expect(a.getByTestId('project-name')).toHaveText('Browser shared library');
   await a.getByRole('button', { name: 'Settings', exact: true }).click();
   await a.getByRole('button', { name: 'Manage sharing', exact: true }).click();
@@ -483,9 +507,10 @@ test('browser sessions share edits, enforce viewer UI and clear access on member
   await a.getByRole('button', { name: 'Projects', exact: true }).click();
   await expandProjectCreation(a);
   await a.getByLabel('Project name', { exact: true }).fill('Browser second project');
-  await a.getByLabel('Technology starting point').selectOption('blazor-bootstrap');
+  await a.getByLabel('Framework', { exact: true }).selectOption('Blazor');
   await a.getByLabel('Share through organization').selectOption({ label: 'Browser Second Team' });
-  await a.getByRole('button', { name: 'Create project', exact: true }).click();
+  await a.getByRole('button', { name: 'Create project and start setup', exact: true }).click();
+  await finishBrowserSetup(a);
   await expect(a.getByTestId('project-name')).toHaveText('Browser second project');
   await a.getByLabel('Active project').selectOption({ label: 'Browser live edit' });
   await expect(a.getByTestId('project-name')).toHaveText('Browser live edit');
@@ -721,10 +746,12 @@ test('browser creates and switches private projects with independent guidance an
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   await expandProjectCreation(page);
   await page.getByLabel('Project name', { exact: true }).fill('My Angular library');
-  await page.getByLabel('Requested Framework(s)', { exact: true }).fill('Angular');
-  await page.getByLabel('Requested Language(s)', { exact: true }).fill('TypeScript');
-  await page.getByLabel('Requested Libraries', { exact: true }).fill('Custom library');
-  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+  await page.getByLabel('Framework', { exact: true }).selectOption('Other');
+  await page.getByLabel('Custom framework', { exact: true }).fill('Angular');
+  await page.getByLabel('Custom language', { exact: true }).fill('TypeScript');
+  await page.getByLabel('Other libraries', { exact: true }).fill('Custom library');
+  await page.getByRole('button', { name: 'Create project and start setup', exact: true }).click();
+  await finishBrowserSetup(page);
   await expect(page.getByTestId('project-name')).toHaveText('My Angular library');
   await page.goto(new URL(page.url()).pathname.replace(/\/components$/, ''));
   await expect(page).toHaveURL(/\/projects\/\d+\/components$/);
@@ -738,9 +765,9 @@ test('browser creates and switches private projects with independent guidance an
   await page.getByRole('button', { name: 'All projects', exact: true }).click();
   await expandProjectCreation(page);
   await page.getByLabel('Project name', { exact: true }).fill('My MUI library');
-  await page.getByLabel('Requested Framework(s)', { exact: true }).fill('React');
-  await page.getByLabel('Requested Libraries', { exact: true }).fill('MUI');
-  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+  await page.getByLabel('Other libraries', { exact: true }).fill('MUI');
+  await page.getByRole('button', { name: 'Create project and start setup', exact: true }).click();
+  await finishBrowserSetup(page);
   await expect(page.getByTestId('project-name')).toHaveText('My MUI library');
   await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
   await expect(page.getByLabel('Project design guidance', { exact: true })).toHaveValue('');
@@ -1618,6 +1645,153 @@ test('saved history does not block live chat and mock history limits do not coun
   expect(rejected).toContain('Chat limit reached');
   expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(45);
   expect([...owner.conn.db.visibleComponentDrafts.iter()]).toEqual(before);
+});
+
+const reactStack = { framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' };
+test('project setup requires input and generates starter components server-side as the requester', async () => {
+  const owner = await connect(await makeToken('setup-owner@example.test', 'Setup Owner'));
+  const outsider = await connect(await makeToken('setup-outsider@example.test', 'Setup Outsider'));
+  await owner.conn.reducers.createSetupProject({ name: 'Starter project', organizationId: 0n, ...reactStack });
+  const find = () => [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Starter project')!;
+  const projectId = find().id;
+  expect(find().setupState).toBe('setup');
+  await expect(owner.conn.reducers.startStarterLibrary({ projectId, starterIds: ['button'] })).rejects.toThrow('Answer the questionnaire or upload at least one document');
+  await expect(owner.conn.reducers.finishProjectSetup({ projectId })).rejects.toThrow('Answer the questionnaire or upload at least one document');
+  await expect(owner.conn.reducers.saveQuestionnaire({ projectId, expectedRevision: 0n, answers: '{"theme":"Neon"}' })).rejects.toThrow('Questionnaire answers are invalid');
+  await expect(outsider.conn.reducers.saveQuestionnaire({ projectId, expectedRevision: 0n, answers: '{"theme":"Dark"}' })).rejects.toThrow('Project edit access is required.');
+  await owner.conn.reducers.saveQuestionnaire({ projectId, expectedRevision: 0n, answers: JSON.stringify({ theme: 'Dark', primaryColor: '#123ABC', corners: 'Rounded (8px)' }) });
+  let guidance = [...owner.conn.db.visibleGuidance.iter()].find(row => row.projectId === projectId)!;
+  expect(guidance.colors).toBe('Primary color: #123abc.');
+  expect(guidance.style).toContain('Corner radius: Rounded (8px).');
+  // Editing guidance text afterwards keeps the structured answers.
+  await owner.conn.reducers.saveGuidance({ projectId, expectedRevision: guidance.revision, audience: guidance.audience, technical: '', style: guidance.style, colors: guidance.colors,
+    typography: guidance.typography, spacing: guidance.spacing, accessibility: guidance.accessibility, guidance: 'Free-form rule' });
+  guidance = [...owner.conn.db.visibleGuidance.iter()].find(row => row.projectId === projectId)!;
+  expect(guidance.guidance).toBe('Free-form rule');
+  expect(JSON.parse(guidance.questionnaire).theme).toBe('Dark');
+  await expect(outsider.conn.reducers.startStarterLibrary({ projectId, starterIds: ['button'] })).rejects.toThrow('Project edit access is required.');
+  await expect(owner.conn.reducers.startStarterLibrary({ projectId, starterIds: [] })).rejects.toThrow('Choose at least one starter component.');
+  await expect(owner.conn.reducers.startStarterLibrary({ projectId, starterIds: ['button', 'carousel'] })).rejects.toThrow('Choose at least one starter component.');
+  await owner.conn.reducers.startStarterLibrary({ projectId, starterIds: ['button', 'kpi-card'] });
+  const tasks = () => [...owner.conn.db.visibleStarterTasks.iter()].filter(row => row.projectId === projectId).sort((a, b) => a.position - b.position);
+  expect(tasks().map(row => row.starterId)).toEqual(['button', 'kpi-card']);
+  expect([...outsider.conn.db.visibleStarterTasks.iter()]).toHaveLength(0);
+  await expect.poll(() => tasks().map(row => row.state).join(','), { timeout: 30000 }).toBe('done,done');
+  await expect.poll(() => find().setupState).toBe('ready');
+  const components = [...owner.conn.db.visibleComponents.iter()].filter(row => row.projectId === projectId);
+  expect(components.map(row => row.name).sort()).toEqual(['Button', 'KpiCard']);
+  const ownerIdentity = [...owner.conn.db.myProfile.iter()][0].identity;
+  for (const task of tasks()) {
+    const job = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.id === task.jobId)!;
+    expect(job.state).toBe('draft_ready');
+    expect(job.componentId).toBe(task.componentId);
+    expect(job.requestedBy.isEqual(ownerIdentity)).toBe(true);
+    expect(job.request).toContain('Create the starter Common component');
+    expect(JSON.parse(job.artifacts).files.map((file: { path: string }) => file.path)).toContain('Button.tsx');
+    expect(JSON.parse(job.snapshot).guidance.colors).toBe('Primary color: #123abc.');
+    expect(job.snapshot).not.toContain('synthetic-operator-');
+    expect([...owner.conn.db.visibleComponentChat.iter()].filter(row => row.componentId === task.componentId).map(row => row.role)).toEqual(['user', 'assistant']);
+  }
+  await expect(owner.conn.reducers.startStarterLibrary({ projectId, starterIds: ['modal'] })).rejects.toThrow('Starter components can only be generated during project setup.');
+  // The starter run does not use up the requester's live chat allowance.
+  for (let index = 0; index < 5; index++) await owner.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Explain the library', componentId: components[0].id });
+});
+
+test('a failed starter component keeps the others, finishes setup and can be retried', async () => {
+  const owner = await connect(await makeToken('starter-retry@example.test', 'Starter Retry'));
+  const outsider = await connect(await makeToken('starter-retry-outsider@example.test', 'Retry Outsider'));
+  await owner.conn.reducers.createSetupProject({ name: 'Failing starter project', organizationId: 0n, framework: 'Blazor', language: 'C#', styling: 'Bootstrap', libraries: '', versions: '' });
+  const find = () => [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Failing starter project')!;
+  const projectId = find().id;
+  // A document alone satisfies the setup requirement.
+  await owner.conn.reducers.uploadReference({ projectId, filename: 'style.md', purpose: 'design', bytes: new TextEncoder().encode('# Style\nUse teal accents.') });
+  await owner.conn.reducers.startStarterLibrary({ projectId, starterIds: ['button', 'kpi-card'] });
+  const tasks = () => [...owner.conn.db.visibleStarterTasks.iter()].filter(row => row.projectId === projectId).sort((a, b) => a.position - b.position);
+  await expect.poll(() => tasks().map(row => row.state).join(','), { timeout: 30000 }).toBe('done,failed');
+  expect(tasks()[1].message).toBe('Gemini is temporarily unavailable. Try again later.');
+  await expect.poll(() => find().setupState).toBe('ready');
+  const kpi = [...owner.conn.db.visibleComponents.iter()].find(row => row.projectId === projectId && row.name === 'KpiCard')!;
+  expect([...owner.conn.db.visibleComponentDrafts.iter()].some(row => row.componentId === kpi.id && row.files.some(file => file.path === 'Common/KpiCard/README.md'))).toBe(true);
+  await expect(outsider.conn.reducers.retryStarterTask({ taskId: tasks()[1].id })).rejects.toThrow('Project edit access is required.');
+  await owner.conn.reducers.retryStarterTask({ taskId: tasks()[1].id });
+  await expect.poll(() => tasks().map(row => row.state).join(','), { timeout: 30000 }).toBe('done,done');
+  await expect.poll(() => find().setupState).toBe('ready');
+});
+
+test('PDF references store original bytes with extracted text and satisfy the setup requirement', async () => {
+  const owner = await connect(await makeToken('pdf-owner@example.test', 'PDF Owner'));
+  const outsider = await connect(await makeToken('pdf-outsider@example.test', 'PDF Outsider'));
+  await owner.conn.reducers.createSetupProject({ name: 'PDF setup project', organizationId: 0n, ...reactStack });
+  const find = () => [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'PDF setup project')!;
+  const projectId = find().id;
+  const pdf = textPdf('Brand guide');
+  const upload = { projectId, filename: 'guide.pdf', purpose: 'design', bytes: new Uint8Array(pdf), text: 'Brand guide text' };
+  await expect(owner.conn.reducers.uploadPdfReference({ ...upload, bytes: new TextEncoder().encode('not a pdf at all') })).rejects.toThrow('Choose a PDF file (.pdf).');
+  await expect(owner.conn.reducers.uploadPdfReference({ ...upload, text: '   ' })).rejects.toThrow('No readable text');
+  await expect(owner.conn.reducers.uploadPdfReference({ ...upload, text: 'x'.repeat(33 * 1024) })).rejects.toThrow('too long');
+  await expect(outsider.conn.reducers.uploadPdfReference(upload)).rejects.toThrow('Project edit access is required.');
+  await owner.conn.reducers.uploadPdfReference(upload);
+  const reference = [...owner.conn.db.visibleReferences.iter()].find(row => row.projectId === projectId)!;
+  expect(reference.content).toBe('Brand guide text');
+  expect(Buffer.from(reference.bytes).equals(pdf)).toBe(true);
+  await owner.conn.reducers.finishProjectSetup({ projectId });
+  await expect.poll(() => find().setupState).toBe('ready');
+});
+
+test('browser setup wizard collects a questionnaire and PDF, then shows starter progress until the library opens', async ({ browser }) => {
+  // First-use pdf.js compilation in the Vite dev server plus two queued generations exceed the default budget.
+  test.setTimeout(120000);
+  const context = await browser.newContext();
+  await seedBrowser(context, await makeToken('wizard@example.test', 'Wizard User'));
+  const page = await context.newPage();
+  const browserErrors: string[] = [];
+  page.on('pageerror', error => browserErrors.push(error.name + ': ' + error.message));
+  await page.goto('/');
+  await expandProjectCreation(page);
+  await page.getByLabel('Project name', { exact: true }).fill('Wizard library');
+  await expect(page.getByLabel('Framework', { exact: true })).toHaveValue('React');
+  await expect(page.getByLabel('shadcn/ui')).toBeChecked();
+  await page.getByLabel('lucide-react').check();
+  await page.getByRole('button', { name: 'Create project and start setup', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/\d+\/setup\/questionnaire$/);
+  const projectPath = new URL(page.url()).pathname.replace(/\/setup\/questionnaire$/, '');
+  // Other project pages wait until setup is finished.
+  await page.goto(projectPath + '/components');
+  await expect(page).toHaveURL(/\/setup\/questionnaire$/);
+  await expect(page.getByRole('button', { name: 'Save and continue', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: /^Skip/ }).click();
+  await expect(page).toHaveURL(/\/setup\/references$/);
+  await expect(page.getByRole('button', { name: 'Continue to starter components', exact: true })).toBeDisabled();
+  await page.getByLabel('Reference file').setInputFiles({ name: 'brand-guide.pdf', mimeType: 'application/pdf', buffer: textPdf('Wizard PDF marker') });
+  await page.getByRole('button', { name: 'Upload reference', exact: true }).click();
+  await expect(page.getByTestId('reference-content')).toContainText('Wizard PDF marker', { timeout: 45000 });
+  await expect(page.getByText('Ready (text extracted from PDF)')).toBeVisible();
+  await page.getByRole('button', { name: 'Back to questionnaire', exact: true }).click();
+  await page.getByLabel('Theme', { exact: true }).selectOption('Dark');
+  await page.getByLabel('Minimal', { exact: true }).check();
+  await page.getByLabel('Primary brand color', { exact: true }).fill('#335577');
+  await page.getByRole('button', { name: 'Save and continue', exact: true }).click();
+  await expect(page).toHaveURL(/\/setup\/references$/);
+  await page.getByRole('button', { name: 'Continue to starter components', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Generate 4 starter components', exact: true })).toBeEnabled();
+  await page.getByRole('checkbox', { name: /Text input/ }).uncheck();
+  await page.getByRole('checkbox', { name: /Modal/ }).uncheck();
+  await page.getByRole('button', { name: 'Generate 2 starter components', exact: true }).click();
+  await expect(page).toHaveURL(/\/setup\/progress$/);
+  await expect(page.getByRole('heading', { name: 'Your starter library is ready', exact: true })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByTestId('starter-progress')).toHaveText('2 of 2 components finished');
+  await page.getByRole('button', { name: 'Open component library', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/\d+\/components$/);
+  await expect(page.getByText('Common/KpiCard', { exact: true })).toBeVisible();
+  await expect(page.getByText('Common/Button', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
+  await expect(page.getByLabel('Colors', { exact: true })).toHaveValue(/#335577/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(projectPath + '/setup/progress');
+  await expect(page.getByTestId('starter-progress')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(browserErrors, 'Setup wizard has no browser runtime errors').toEqual([]);
+  await context.close();
 });
 
 async function instructionProject(label: string, framework = 'React') {

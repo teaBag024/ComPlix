@@ -25,4 +25,5 @@ export default __t.row({
   libraries: __t.string(),
   versions: __t.string(),
   revision: __t.u64(),
+  setupState: __t.string().name("setup_state"),
 });
