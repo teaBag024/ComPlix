@@ -21,4 +21,5 @@ export default __t.row({
   spacing: __t.string(),
   accessibility: __t.string(),
   guidance: __t.string(),
+  questionnaire: __t.string(),
 });

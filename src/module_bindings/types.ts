@@ -244,6 +244,7 @@ export const ProjectGuidance = __t.object("ProjectGuidance", {
   spacing: __t.string(),
   accessibility: __t.string(),
   guidance: __t.string(),
+  questionnaire: __t.string(),
 });
 export type ProjectGuidance = __Infer<typeof ProjectGuidance>;
 
@@ -284,8 +285,30 @@ export const ProjectSummary = __t.object("ProjectSummary", {
   libraries: __t.string(),
   versions: __t.string(),
   revision: __t.u64(),
+  setupState: __t.string(),
 });
 export type ProjectSummary = __Infer<typeof ProjectSummary>;
+
+export const StarterTask = __t.object("StarterTask", {
+  id: __t.u64(),
+  projectId: __t.u64(),
+  componentId: __t.u64(),
+  starterId: __t.string(),
+  position: __t.u32(),
+  state: __t.string(),
+  jobId: __t.u64(),
+  message: __t.string(),
+  requestedBy: __t.identity(),
+  updatedAt: __t.timestamp(),
+});
+export type StarterTask = __Infer<typeof StarterTask>;
+
+export const StarterTick = __t.object("StarterTick", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  projectId: __t.u64(),
+});
+export type StarterTick = __Infer<typeof StarterTick>;
 
 export const UserProfile = __t.object("UserProfile", {
   identity: __t.identity(),
@@ -321,6 +344,9 @@ export type VisibleProjects = __Infer<typeof VisibleProjects>;
 export const VisibleReferences = __t.object("VisibleReferences", {});
 export type VisibleReferences = __Infer<typeof VisibleReferences>;
 
+export const VisibleStarterTasks = __t.object("VisibleStarterTasks", {});
+export type VisibleStarterTasks = __Infer<typeof VisibleStarterTasks>;
+
 export const WorkspaceProject = __t.object("WorkspaceProject", {
   id: __t.u64(),
   organizationId: __t.u64(),
@@ -334,6 +360,7 @@ export const WorkspaceProject = __t.object("WorkspaceProject", {
   libraries: __t.string(),
   versions: __t.string(),
   revision: __t.u64(),
+  setupState: __t.string(),
 });
 export type WorkspaceProject = __Infer<typeof WorkspaceProject>;
 

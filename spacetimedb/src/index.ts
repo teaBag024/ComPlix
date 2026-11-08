@@ -5,7 +5,9 @@ import { detectEditorInstructions, type EditorInstruction } from '../../shared/e
 import { previewKind, previewMessages, previewUrl, withPreviewEntry, startSandboxBuild, PREVIEW_IDLE_SECONDS } from '../../shared/sandboxPreview';
 import { NVIDIA_MODEL } from '../../shared/nvidiaDraft';
 import { generationStages, MAX_GENERATION_HISTORY, mockArtifacts } from '../../shared/generationWorkflow';
-import { MAX_PROJECT_REFERENCES, validateReferenceFile } from '../../shared/referenceFiles';
+import { MAX_PROJECT_REFERENCES, validateReferenceFile, validatePdfReference } from '../../shared/referenceFiles';
+import { parseQuestionnaire, hasAnswers, questionnaireGuidance } from '../../shared/questionnaire';
+import { starterComponents, starterRequest } from '../../shared/starterComponents';
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx, type ViewCtx, type ProcedureCtx } from 'spacetimedb/server';
 import { Identity, Timestamp, TimeDuration, ScheduleAt } from 'spacetimedb';
 
@@ -26,6 +28,8 @@ const workspaceProject = table({ name: 'workspace_project' }, {
   id: t.u64().primaryKey().autoInc(), organizationId: t.u64().index('btree'), name: t.string(), outputStack: t.string(), createdBy: t.identity(),
   ownership: t.string().default('organization'), framework: t.string().default(''), language: t.string().default(''),
   styling: t.string().default(''), libraries: t.string().default(''), versions: t.string().default(''), revision: t.u64().default(0n),
+  // 'setup' (wizard), 'generating' (starter components queued) or 'ready'.
+  setupState: t.string().default('ready'),
 });
 const projectAccess = table({ name: 'project_access' }, {
   key: t.string().primaryKey(), projectId: t.u64().index('btree'), user: t.identity().index('btree'), role: t.string(),
@@ -40,6 +44,7 @@ const legacyTransfer = table({ name: 'legacy_transfer' }, {
 const projectGuidance = table({ name: 'project_guidance' }, {
   projectId: t.u64().primaryKey(), revision: t.u64(), audience: t.string(), technical: t.string(),
   style: t.string(), colors: t.string(), typography: t.string(), spacing: t.string(), accessibility: t.string(), guidance: t.string(),
+  questionnaire: t.string().default(''),
 });
 const projectReference = table({ name: 'project_reference' }, {
   id: t.u64().primaryKey().autoInc(), projectId: t.u64().index('btree'), filename: t.string(), purpose: t.string(),
@@ -69,12 +74,19 @@ const componentPreview = table({ name: 'component_preview' }, {
   jobId: t.u64().primaryKey(), projectId: t.u64().index('btree'), componentId: t.u64(), sandboxId: t.string(), host: t.string(),
   writeKey: t.string(), capability: t.string(), revision: t.u64(), expiresAt: t.timestamp(), updatedAt: t.timestamp(),
 });
+// One row per starter component; a scheduled procedure works through pending rows one at a time
+// on behalf of requestedBy, whose project edit access is rechecked before every provider call.
+const starterTask = table({ name: 'starter_task' }, {
+  id: t.u64().primaryKey().autoInc(), projectId: t.u64().index('btree'), componentId: t.u64(), starterId: t.string(), position: t.u32(),
+  state: t.string(), jobId: t.u64(), message: t.string(), requestedBy: t.identity(), updatedAt: t.timestamp(),
+});
+const starterTick = table({ name: 'starter_tick' }, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), projectId: t.u64() });
 const editorInstruction = table({ name: 'editor_instruction' }, {
   id: t.u64().primaryKey().autoInc(), key: t.string().unique(), projectId: t.u64().index('btree'), componentId: t.u64(),
   sourceJobId: t.u64(), revision: t.u64(), path: t.string(), text: t.string(), line: t.u32(),
   state: t.string(), jobId: t.u64(), updatedBy: t.identity(), updatedAt: t.timestamp(),
 });
-const db = schema({ editorInstruction, componentPreview, component, componentChatMessage, project, userProfile, organization, membership, workspaceProject, projectAccess, invitation, legacyTransfer, projectGuidance, projectReference, generationJob, componentDraft, modelUsage, generationDeadline }, {
+const db = schema({ editorInstruction, starterTask, starterTick, componentPreview, component, componentChatMessage, project, userProfile, organization, membership, workspaceProject, projectAccess, invitation, legacyTransfer, projectGuidance, projectReference, generationJob, componentDraft, modelUsage, generationDeadline }, {
   env: { AUTH_ISSUER: t.string().optional(), AUTH_CLIENT_ID: t.string().optional(), GENERATION_MODE: t.string().optional(), NVIDIA_ENABLED: t.string().optional(), NVIDIA_API_KEY: t.string().optional(), NVIDIA_MODEL: t.string().optional(), GEMINI_API_KEY: t.string().optional(), GEMINI_MODEL: t.string().optional(), E2B_API_KEY: t.string().optional(), E2B_REACT_TEMPLATE: t.string().optional(), E2B_BLAZOR_TEMPLATE: t.string().optional(), PREVIEW_APP_ORIGIN: t.string().optional() },
 });
 export default db;
@@ -175,7 +187,7 @@ export const renameOrganization = db.reducer({ organizationId: t.u64(), name: t.
 export const createProject = db.reducer({ organizationId: t.u64(), name: t.string(), outputStack: t.string() }, (ctx, args) => {
   manager(ctx, args.organizationId);
   validateStack(args.outputStack);
-  ctx.db.workspaceProject.insert({ id: 0n, organizationId: args.organizationId, name: name(args.name), outputStack: args.outputStack, createdBy: ctx.sender, ownership: 'personal', ...presetDetails(args.outputStack), revision: 0n });
+  ctx.db.workspaceProject.insert({ id: 0n, organizationId: args.organizationId, name: name(args.name), outputStack: args.outputStack, createdBy: ctx.sender, ownership: 'personal', ...presetDetails(args.outputStack), revision: 0n, setupState: 'ready' });
 });
 export const createProjectWithDetails = db.reducer({ name: t.string(), organizationId: t.u64(), ...detailFields }, (ctx, args) => {
   user(ctx);
@@ -183,7 +195,46 @@ export const createProjectWithDetails = db.reducer({ name: t.string(), organizat
   const { name: title, organizationId, ...details } = args;
   validateDetails(details);
   ctx.db.workspaceProject.insert({ id: 0n, name: name(title), organizationId, createdBy: ctx.sender,
-    outputStack: '', ownership: 'personal', ...details, revision: 0n });
+    outputStack: '', ownership: 'personal', ...details, revision: 0n, setupState: 'ready' });
+});
+// The UI creates projects through the setup wizard; the direct API above stays ready immediately.
+export const createSetupProject = db.reducer({ name: t.string(), organizationId: t.u64(), ...detailFields }, (ctx, args) => {
+  user(ctx);
+  if (args.organizationId && !role(ctx, args.organizationId, ctx.sender)) denied();
+  const { name: title, organizationId, ...details } = args;
+  validateDetails(details);
+  ctx.db.workspaceProject.insert({ id: 0n, name: name(title), organizationId, createdBy: ctx.sender,
+    outputStack: '', ownership: 'personal', ...details, revision: 0n, setupState: 'setup' });
+});
+function editableProject(ctx: Ctx, projectId: bigint) {
+  user(ctx);
+  const target = ctx.db.workspaceProject.id.find(projectId);
+  if (!target || permission(ctx, target, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
+  return target;
+}
+/** Setup requires either questionnaire answers or at least one uploaded reference. */
+function requireSetupInput(ctx: Ctx, projectId: bigint) {
+  const saved = ctx.db.projectGuidance.projectId.find(projectId)?.questionnaire ?? '';
+  let answered = false;
+  try { answered = hasAnswers(parseQuestionnaire(saved)); } catch { answered = false; }
+  if (!answered && ![...ctx.db.projectReference.projectId.filter(projectId)].length) throw new SenderError('Answer the questionnaire or upload at least one document before continuing.');
+}
+export const saveQuestionnaire = db.reducer({ projectId: t.u64(), expectedRevision: t.u64(), answers: t.string() }, (ctx, args) => {
+  const target = editableProject(ctx, args.projectId);
+  let answers;
+  try { answers = parseQuestionnaire(args.answers); } catch (cause) { throw new SenderError(cause instanceof Error ? cause.message : 'Invalid questionnaire.'); }
+  const current = ctx.db.projectGuidance.projectId.find(target.id);
+  if ((current?.revision ?? 0n) !== args.expectedRevision) throw new SenderError('Guidance changed. Review the latest saved version.');
+  // Generation reads the guidance text fields; technical notes and free-form guidance are left untouched.
+  const row = { projectId: target.id, technical: current?.technical ?? '', guidance: current?.guidance ?? '',
+    ...questionnaireGuidance(answers), questionnaire: JSON.stringify(answers), revision: args.expectedRevision + 1n };
+  if (current) ctx.db.projectGuidance.projectId.update(row); else ctx.db.projectGuidance.insert(row);
+});
+export const finishProjectSetup = db.reducer({ projectId: t.u64() }, (ctx, args) => {
+  const target = editableProject(ctx, args.projectId);
+  if (target.setupState !== 'setup') return;
+  requireSetupInput(ctx, target.id);
+  ctx.db.workspaceProject.id.update({ ...target, setupState: 'ready' });
 });
 export const updateProjectDetails = db.reducer({ projectId: t.u64(), expectedRevision: t.u64(), ...detailFields }, (ctx, args) => {
   user(ctx);
@@ -222,7 +273,7 @@ export const saveGuidance = db.reducer({
   for (const value of [values.audience, values.technical, values.style, values.colors, values.typography, values.spacing, values.accessibility, values.guidance]) {
     if (value.length > 4000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) throw new SenderError('Each guidance answer must be at most 4000 characters without control characters.');
   }
-  const row = { ...values, revision: expectedRevision + 1n };
+  const row = { ...values, questionnaire: current?.questionnaire ?? '', revision: expectedRevision + 1n };
   if (current) ctx.db.projectGuidance.projectId.update(row);
   else ctx.db.projectGuidance.insert(row);
 });
@@ -372,7 +423,7 @@ export const importLegacyProject = db.reducer({ organizationId: t.u64(), legacyI
   const old = ctx.db.project.id.find(args.legacyId);
   if (!handoff || handoff.claimed || !handoff.destination.isEqual(ctx.sender) || !old ||
       handoff.expiresAt.microsSinceUnixEpoch <= ctx.timestamp.microsSinceUnixEpoch) denied();
-  ctx.db.workspaceProject.insert({ id: 0n, organizationId: args.organizationId, name: old.name, outputStack: old.outputStack, createdBy: ctx.sender, ownership: 'personal', ...presetDetails(old.outputStack), revision: 0n });
+  ctx.db.workspaceProject.insert({ id: 0n, organizationId: args.organizationId, name: old.name, outputStack: old.outputStack, createdBy: ctx.sender, ownership: 'personal', ...presetDetails(old.outputStack), revision: 0n, setupState: 'ready' });
   ctx.db.legacyTransfer.legacyId.update({ ...handoff, claimed: true });
 });
 export const myProject = db.view({ name: 'my_project', public: true }, t.option(project.rowType), ctx => {
@@ -386,7 +437,7 @@ export const myOrganizations = db.view({ name: 'my_organizations', public: true 
     const org = ctx.db.organization.id.find(member.organizationId);
     return org ? [{ id: org.id, name: org.name, role: member.role }] : [];
   }));
-const projectSummary = t.object('ProjectSummary', { id: t.u64(), organizationId: t.u64(), name: t.string(), outputStack: t.string(), permission: t.string(), owner: t.identity(), canManage: t.bool(), ownership: t.string(), ...detailFields, revision: t.u64() });
+const projectSummary = t.object('ProjectSummary', { id: t.u64(), organizationId: t.u64(), name: t.string(), outputStack: t.string(), permission: t.string(), owner: t.identity(), canManage: t.bool(), ownership: t.string(), ...detailFields, revision: t.u64(), setupState: t.string() });
 export const visibleProjects = db.view({ name: 'visible_projects', public: true }, t.array(projectSummary), ctx =>
   accessibleProjects(ctx).map(row => ({ ...row,
     ...(row.framework || !row.outputStack ? {} : presetDetails(row.outputStack)),
@@ -447,6 +498,14 @@ function insertReference(ctx: Ctx, projectId: bigint, filename: string, purpose:
   if (existing.some(row => row.filename.toLowerCase() === filename.toLowerCase())) throw new SenderError('A reference with this filename already exists. Remove it first or use a different filename.');
   ctx.db.projectReference.insert({ id: 0n, projectId, filename, purpose, bytes, content, uploadedBy: ctx.sender, createdAt: ctx.timestamp });
 }
+// The browser extracts PDF text; it is stored as untrusted context next to the original bytes.
+export const uploadPdfReference = db.reducer({ projectId: t.u64(), filename: t.string(), purpose: t.string(), bytes: t.array(t.u8()), text: t.string() }, (ctx, args) => {
+  const target = editableProject(ctx, args.projectId);
+  let content: string;
+  try { content = validatePdfReference(args.filename, new Uint8Array(args.bytes), args.text, args.purpose); }
+  catch (cause) { throw new SenderError(cause instanceof Error ? cause.message : 'Invalid PDF reference.'); }
+  insertReference(ctx, target.id, args.filename, args.purpose, args.bytes, content);
+});
 export const removeReference = db.reducer({ referenceId: t.u64() }, (ctx, args) => {
   user(ctx);
   const row = ctx.db.projectReference.id.find(args.referenceId);
@@ -464,9 +523,10 @@ function generationFingerprint(ctx: Ctx | ReadCtx, projectId: bigint) {
   return JSON.stringify([target.name, target.revision.toString(), guidance?.revision.toString() ?? '0', refs]);
 }
 type GenerationArgs = { projectId: bigint; requestId: string; request: string; scenario: string; sourceJobId?: bigint; expectedDraftRevision?: bigint; componentId?: bigint; editorInstruction?: { id: string; path: string; text: string; line: number } };
-function queueGeneration(ctx: Ctx, args: GenerationArgs, mode = 'mock', secret = '', model = '') {
-  user(ctx);
-  const actor = ctx.sender;
+/** `delegate` is set only by the starter scheduler: the job runs as that user, whose access is rechecked here. */
+function queueGeneration(ctx: Ctx, args: GenerationArgs, mode = 'mock', secret = '', model = '', delegate?: Identity) {
+  if (!delegate) user(ctx);
+  const actor = delegate ?? ctx.sender;
   const project = ctx.db.workspaceProject.id.find(args.projectId);
   if (!project || permission(ctx, project, actor) !== 'editor') throw new SenderError('Project edit access is required.');
   if (mode === 'mock' ? ctx.env.GENERATION_MODE !== 'mock' : ctx.env.NVIDIA_ENABLED !== 'true') throw new SenderError('Generation providers are not configured.');
@@ -509,7 +569,8 @@ function queueGeneration(ctx: Ctx, args: GenerationArgs, mode = 'mock', secret =
     guidance: guidance ? { audience: guidance.audience, technical: guidance.technical, style: guidance.style, colors: guidance.colors, typography: guidance.typography, spacing: guidance.spacing, accessibility: guidance.accessibility, guidance: guidance.guidance } : {}, references, request: args.request.trim(), ...(args.editorInstruction ? { origin: 'editor_comment', editorInstruction: args.editorInstruction } : {}) });
   if (new TextEncoder().encode(snapshot).length > 65536) throw new SenderError('Complete project context exceeds 64 KiB. Shorten or remove project references or reduce draft/context size before sending.');
   if (secret && snapshot.includes(secret)) throw new SenderError('Remove credentials from the request or project context.');
-  if (isChatMode(mode)) {
+  // Starter runs are bounded by their task count instead of the per-minute chat window.
+  if (isChatMode(mode) && !delegate) {
     const usage = ctx.db.modelUsage.identity.find(ctx.sender);
     const withinWindow = usage && ctx.timestamp.microsSinceUnixEpoch - usage.windowStart.microsSinceUnixEpoch < 60000000n;
     if (withinWindow && usage.requests >= 5) throw new SenderError('Chat limit reached. Wait a minute before sending another message.');
@@ -752,6 +813,8 @@ export const expireGeneration = db.reducer({ onSchedule: generationDeadline }, {
   const job = ctx.db.generationJob.id.find(timer.jobId);
   if (job && isChatMode(job.mode) && ['queued', 'generating', 'generating_code'].includes(job.state)) {
     ctx.db.generationJob.id.update({ ...job, state: 'failed', diagnostic: 'AI request exceeded its deadline. No automatic retry was made. You can send a new message.' });
+    // Resume an interrupted starter run; the tick settles this task as failed and continues.
+    if ([...ctx.db.starterTask.projectId.filter(job.projectId)].some(task => task.jobId === job.id && task.state === 'generating')) scheduleStarter(ctx, job.projectId, 0n);
   }
 });
 
@@ -763,7 +826,7 @@ export const createComponent = db.reducer({ projectId: t.u64(), name: t.string()
   if (!project || permission(ctx, project, ctx.sender) !== 'editor') throw new SenderError('Project edit access is required.');
   insertComponent(ctx, project, args.name, args.category);
 });
-/** Creates a component with a minimal placeholder draft so chat can edit it. */
+/** Creates a component with a minimal placeholder draft so chat and the starter run can edit it. */
 type ProjectWithStack = { id: bigint; outputStack: string; framework: string; language: string; styling: string; libraries: string; versions: string };
 function insertComponent(ctx: Ctx, project: ProjectWithStack, componentName: string, category: string, actor = ctx.sender) {
   const name = componentName.trim();
@@ -781,6 +844,93 @@ function insertComponent(ctx: Ctx, project: ProjectWithStack, componentName: str
   return row;
 }
 
+// ---- Starter library: generated one component at a time after project setup. ----
+export const visibleStarterTasks = db.view({ name: 'visible_starter_tasks', public: true }, t.array(starterTask.rowType), ctx =>
+  accessibleProjects(ctx).flatMap(project => [...ctx.db.starterTask.projectId.filter(project.id)]));
+function scheduleStarter(ctx: Ctx, projectId: bigint, delayMicros: bigint) {
+  ctx.db.starterTick.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros), projectId });
+}
+const terminalJob = (state: string) => ['preview_ready', 'draft_ready', 'failed', 'cancelled'].includes(state);
+const jobHasFiles = (artifacts: string) => { try { return JSON.parse(artifacts).files?.length > 0; } catch { return false; } };
+export const startStarterLibrary = db.reducer({ projectId: t.u64(), starterIds: t.array(t.string()) }, (ctx, args) => {
+  const target = editableProject(ctx, args.projectId);
+  if (target.setupState !== 'setup') throw new SenderError('Starter components can only be generated during project setup.');
+  requireSetupInput(ctx, target.id);
+  const technologies = target.framework || !target.outputStack ? target : { ...target, ...presetDetails(target.outputStack) };
+  if (!selectStackAdapter(technologies)) throw new SenderError('Starter components need a supported stack (React + TypeScript or Blazor). Finish setup without starters instead.');
+  chatCredentials(ctx);
+  const chosen = starterComponents.filter(item => args.starterIds.includes(item.id));
+  if (!chosen.length || chosen.length !== new Set(args.starterIds).size) throw new SenderError('Choose at least one starter component.');
+  const existing = [...ctx.db.component.projectId.filter(target.id)];
+  chosen.forEach((item, position) => {
+    const row = existing.find(component => component.name.toLowerCase() === item.name.toLowerCase()) ?? insertComponent(ctx, technologies, item.name, 'common');
+    ctx.db.starterTask.insert({ id: 0n, projectId: target.id, componentId: row.id, starterId: item.id, position, state: 'pending', jobId: 0n, message: '', requestedBy: ctx.sender, updatedAt: ctx.timestamp });
+  });
+  ctx.db.workspaceProject.id.update({ ...target, setupState: 'generating' });
+  scheduleStarter(ctx, target.id, 0n);
+});
+export const retryStarterTask = db.reducer({ taskId: t.u64() }, (ctx, args) => {
+  const task = ctx.db.starterTask.id.find(args.taskId);
+  if (!task) throw new SenderError('Project edit access is required.');
+  const target = editableProject(ctx, task.projectId);
+  if (task.state !== 'failed') return;
+  // The retry runs as whoever asked for it.
+  ctx.db.starterTask.id.update({ ...task, state: 'pending', jobId: 0n, message: '', requestedBy: ctx.sender, updatedAt: ctx.timestamp });
+  if (target.setupState === 'ready') ctx.db.workspaceProject.id.update({ ...target, setupState: 'generating' });
+  scheduleStarter(ctx, target.id, 0n);
+});
+/** Records a finished job on its task. Idempotent; safe to call after crashes or cancellation. */
+function settleStarterTasks(ctx: Ctx, projectId: bigint) {
+  for (const task of ctx.db.starterTask.projectId.filter(projectId)) {
+    if (task.state !== 'generating') continue;
+    const job = ctx.db.generationJob.id.find(task.jobId);
+    if (job && !terminalJob(job.state)) continue;
+    const done = !!job && job.state === 'draft_ready' && jobHasFiles(job.artifacts);
+    const message = done ? '' : !job ? 'Generation record is missing.' : job.state === 'draft_ready' ? 'ComPlix replied without generating files. Retry to try again.' : job.diagnostic || 'Generation failed.';
+    ctx.db.starterTask.id.update({ ...task, state: done ? 'done' : 'failed', message: message.slice(0, 500), updatedAt: ctx.timestamp });
+  }
+}
+// Scheduled only; clients cannot call onSchedule functions. Each tick runs at most one provider job.
+export const runStarterTask = db.procedure({ onSchedule: starterTick }, { timer: starterTick.rowType }, t.unit(), (ctx, { timer }) => {
+  const claim = ctx.withTx(tx => {
+    const target = tx.db.workspaceProject.id.find(timer.projectId);
+    if (!target) return undefined;
+    settleStarterTasks(tx, target.id);
+    const tasks = [...tx.db.starterTask.projectId.filter(target.id)].sort((a, b) => a.position - b.position);
+    // Another tick owns the running task; it schedules the follow-up when it finishes.
+    if (tasks.some(task => task.state === 'generating')) return undefined;
+    const next = tasks.find(task => task.state === 'pending');
+    if (!next) {
+      if (target.setupState === 'generating') tx.db.workspaceProject.id.update({ ...target, setupState: 'ready' });
+      return undefined;
+    }
+    const fail = (message: string) => {
+      tx.db.starterTask.id.update({ ...next, state: 'failed', message, updatedAt: tx.timestamp });
+      scheduleStarter(tx, target.id, 0n);
+      return undefined;
+    };
+    if (!tx.db.userProfile.identity.find(next.requestedBy) || permission(tx, target, next.requestedBy) !== 'editor') return fail('The person who started setup no longer has edit access.');
+    const busy = [...tx.db.generationJob.projectId.filter(target.id)].some(job => !terminalJob(job.state));
+    if (busy) { expireStaleGenerations(tx, target.id); scheduleStarter(tx, target.id, 10000000n); return undefined; }
+    let credentials;
+    try { credentials = chatCredentials(tx); } catch { return fail('ComPlix chat is not configured. Contact the operator.'); }
+    let job;
+    try {
+      job = queueGeneration(tx, { projectId: target.id, componentId: next.componentId, scenario: 'success', request: starterRequest(next.starterId),
+        requestId: 'starter-' + next.id.toString() + '-' + tx.timestamp.microsSinceUnixEpoch.toString() }, 'gemini', credentials.nvidiaKey, credentials.geminiModel, next.requestedBy);
+    } catch (cause) { return fail(cause instanceof SenderError ? cause.message : 'Starter generation could not be queued.'); }
+    tx.db.generationJob.id.update({ ...job, state: 'generating' });
+    tx.db.starterTask.id.update({ ...next, state: 'generating', jobId: job.id, message: '', updatedAt: tx.timestamp });
+    return { claim: { id: job.id, snapshot: job.snapshot, ...credentials }, actor: next.requestedBy };
+  });
+  if (!claim) return {};
+  try { executeChatJob(ctx, claim.claim, claim.actor); }
+  finally {
+    // Always settle and continue, even when the result transaction rejected a lost-access user.
+    ctx.withTx(tx => { settleStarterTasks(tx, timer.projectId); scheduleStarter(tx, timer.projectId, 1000000n); });
+  }
+  return {};
+});
 export const clearComponentChat = db.reducer({ componentId: t.u64() }, (ctx, args) => {
   user(ctx);
   const component = ctx.db.component.id.find(args.componentId);

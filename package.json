@@ -23,6 +23,7 @@
     "@radix-ui/react-tabs": "^1.2.1",
     "e2b": "2.63.0",
     "oidc-client-ts": "3.5.0",
+    "pdfjs-dist": "6.4.299",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-oidc-context": "3.3.1",

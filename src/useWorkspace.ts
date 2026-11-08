@@ -14,6 +14,8 @@ import type referenceSchema from './module_bindings/visible_references_table';
 export type ProjectReference = Infer<typeof referenceSchema>;
 import type { Infer } from 'spacetimedb';
 import type guidanceSchema from './module_bindings/visible_guidance_table';
+import type starterSchema from './module_bindings/visible_starter_tasks_table';
+export type StarterTask = Infer<typeof starterSchema>;
 export type Guidance = Infer<typeof guidanceSchema>;
 import { useEffect, useState } from 'react';
 import { DbConnection, tables } from './module_bindings';
@@ -21,8 +23,8 @@ import type { UserProfile, OrganizationSummary, ProjectSummary, MemberSummary, I
 
 export const endpoint = import.meta.env.VITE_SPACETIME_URI ?? 'http://127.0.0.1:3000';
 export const database = import.meta.env.VITE_SPACETIME_DATABASE ?? 'complix-local';
-export type WorkspaceData = { profile?: UserProfile; organizations: OrganizationSummary[]; projects: ProjectSummary[]; members: MemberSummary[]; invitations: InvitationSummary[]; guidance: Guidance[]; shares: ProjectShareSummary[]; references: ProjectReference[]; jobs: GenerationJob[]; drafts: ComponentDraft[]; previews: ComponentPreview[]; components: Component[]; messages: ComponentMessage[]; instructions: SavedEditorInstruction[]; generationMode: string; chatEnabled: boolean };
-const empty = (): WorkspaceData => ({ organizations: [], projects: [], members: [], invitations: [], guidance: [], shares: [], references: [], jobs: [], drafts: [], previews: [], components: [], messages: [], instructions: [], generationMode: 'unconfigured', chatEnabled: false });
+export type WorkspaceData = { profile?: UserProfile; organizations: OrganizationSummary[]; projects: ProjectSummary[]; members: MemberSummary[]; invitations: InvitationSummary[]; guidance: Guidance[]; shares: ProjectShareSummary[]; references: ProjectReference[]; jobs: GenerationJob[]; drafts: ComponentDraft[]; previews: ComponentPreview[]; components: Component[]; messages: ComponentMessage[]; starterTasks: StarterTask[]; instructions: SavedEditorInstruction[]; generationMode: string; chatEnabled: boolean };
+const empty = (): WorkspaceData => ({ organizations: [], projects: [], members: [], invitations: [], guidance: [], shares: [], references: [], jobs: [], drafts: [], previews: [], components: [], messages: [], starterTasks: [], instructions: [], generationMode: 'unconfigured', chatEnabled: false });
 export function useWorkspace(token: string, attempt: number) {
   const [data, setData] = useState(empty);
   const [connection, setConnection] = useState<DbConnection>();
@@ -61,12 +63,12 @@ export function useWorkspace(token: string, attempt: number) {
                 shares: [...ctx.db.managedProjectShares.iter()],
                 references: [...ctx.db.visibleReferences.iter()],
                 jobs: [...ctx.db.visibleGenerationJobs.iter()],
-                drafts: [...ctx.db.visibleComponentDrafts.iter()], previews: [...ctx.db.visibleComponentPreviews.iter()], components: [...ctx.db.visibleComponents.iter()], messages: [...ctx.db.visibleComponentChat.iter()], instructions: [...ctx.db.visibleEditorInstructions.iter()],
+                drafts: [...ctx.db.visibleComponentDrafts.iter()], previews: [...ctx.db.visibleComponentPreviews.iter()], components: [...ctx.db.visibleComponents.iter()], messages: [...ctx.db.visibleComponentChat.iter()], starterTasks: [...ctx.db.visibleStarterTasks.iter()], instructions: [...ctx.db.visibleEditorInstructions.iter()],
                 generationMode: [...ctx.db.generationSettings.iter()][0]?.mode ?? 'unconfigured',
                 chatEnabled: [...ctx.db.generationSettings.iter()][0]?.chatEnabled ?? false,
               });
             };
-            const handles = [ctx.db.myProfile, ctx.db.myOrganizations, ctx.db.visibleProjects, ctx.db.organizationMembers, ctx.db.myInvitations, ctx.db.visibleGuidance, ctx.db.managedProjectShares, ctx.db.visibleReferences, ctx.db.visibleGenerationJobs, ctx.db.visibleComponentDrafts, ctx.db.visibleComponentPreviews, ctx.db.visibleComponents, ctx.db.visibleComponentChat, ctx.db.visibleEditorInstructions, ctx.db.generationSettings];
+            const handles = [ctx.db.myProfile, ctx.db.myOrganizations, ctx.db.visibleProjects, ctx.db.organizationMembers, ctx.db.myInvitations, ctx.db.visibleGuidance, ctx.db.managedProjectShares, ctx.db.visibleReferences, ctx.db.visibleGenerationJobs, ctx.db.visibleComponentDrafts, ctx.db.visibleComponentPreviews, ctx.db.visibleComponents, ctx.db.visibleComponentChat, ctx.db.visibleStarterTasks, ctx.db.visibleEditorInstructions, ctx.db.generationSettings];
             for (const handle of handles) {
               handle.onInsert(refresh); handle.onDelete(refresh); handle.onUpdate(refresh);
             }
@@ -77,7 +79,7 @@ export function useWorkspace(token: string, attempt: number) {
               refresh();
               setConnection(ctx);
               setStatus('ready');
-            }).onError(fail).subscribe([tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponentPreviews, tables.visibleComponents, tables.visibleComponentChat, tables.visibleEditorInstructions, tables.generationSettings]);
+            }).onError(fail).subscribe([tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponentPreviews, tables.visibleComponents, tables.visibleComponentChat, tables.visibleStarterTasks, tables.visibleEditorInstructions, tables.generationSettings]);
           }).catch(fail);
         }).onDisconnect(fail).onConnectError(fail).build();
     } catch { fail(); }

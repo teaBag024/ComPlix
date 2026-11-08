@@ -597,6 +597,28 @@ Validation: four focused foundation browser tests passed (project creation/switc
 
 Revised realtime-agent-implementation-proposal-v2.md at owner request: comment-origin requests, durable deduplication, separate complete candidates, revision/local-edit protection, logical Stop checks and phased verification gates. Removed abortable SSE/instant teardown assumptions; automatic triggering and marker UX remain open. Reviewed current coordinator/cancellation/context checks. Documentation only; no application tests, build, publication or provider calls performed.
 
+## Project setup wizard and starter components - November 8, 2026 (in progress, not complete)
+
+Owner request: new projects go through a required setup flow (questionnaire and/or uploaded documents, PDF included), then ComPlix generates starter Common components on the server with a loading screen. Branch: feat/project-setup-wizard (created from the uncommitted sandbox-preview working tree).
+
+Implemented:
+- **Backend:** `createSetupProject` (projects start in `setupState = 'setup'`), `saveQuestionnaire` (validated structured answers stored as JSON and rendered into the guidance text fields generation reads), `finishProjectSetup`, `startStarterLibrary`, `retryStarterTask`, `uploadPdfReference`, the `starter_task` table, the `visible_starter_tasks` view and the scheduled `runStarterTask` procedure. Questionnaire-or-document is enforced on the server. The chat procedure was split into `chatCredentials` and `executeChatJob`, so starter jobs use the same Gemini + Nemotron path as live chat, run as the requesting user, and recheck that user's edit access. The job deadline handler resumes an interrupted starter run.
+- **Frontend:** `/projects/:id/setup/{questionnaire,references,components,progress}` pages (`ProjectSetup.tsx`), a framework dropdown with library checkboxes plus an "Other" free-text option (`StackPicker.tsx`), browser PDF text extraction (`pdfText.ts`, pdf.js 6.4.299 legacy build, lazy-loaded), a setup gate on other project pages, a "generating" banner and project-card badges.
+- **Shared rules:** `shared/questionnaire.ts`, `shared/starterComponents.ts` (Button, TextInput, KpiCard, Modal) and PDF limits in `shared/referenceFiles.ts`.
+
+Checks actually run:
+- Frontend and module strict typechecks and the production build passed (pdf.js is a separate lazy chunk; the existing >500 kB main-chunk warning remains). Module build and binding generation passed.
+- New unit spec `tests/projectSetupRules.spec.ts`: 6 passed.
+- Focused integration tests in `tests/foundation.spec.ts`, mocked providers: 3 passed. These cover setup input gating, questionnaire validation, the starter run executing server-side as the requester with drafts and chat transcripts, the live chat allowance being unaffected, an isolated provider failure followed by retry, and PDF bytes plus text storage.
+
+Not passing or not run:
+- **Browser wizard test:** passed questionnaire, PDF upload/extraction and the gate before reaching its timeout. It was not re-run to completion.
+- **Two migrated UI tests** ("browser sessions share edits…" and "browser creates and switches…") fail. Right after a project is created in the single-page flow, the server closes the browser's SpacetimeDB websocket without an error, so the page shows "Cannot load the workspace". A full page reload recovers. Cause not yet identified.
+- **Concurrent edits:** another local session was editing `spacetimedb/src/index.ts`, `src/OrganizationWorkspace.tsx`, `src/ProjectLibrary.tsx` and `src/useWorkspace.ts` (an editor-instructions feature) at the same time. Results after about 05:00 may reflect those edits.
+- **Not done:** full regression, live provider run, local republish.
+- **Found while debugging:** the modern pdf.js 6 build hangs in this test browser and fails in Node 24 because `Uint8Array.prototype.toHex` is missing. The legacy build is used instead.
+
+
 ## Automatic editor-comment instructions - November 8, 2026
 
 Implemented the first working increment on `feat/editor-comment-instructions` after the owner selected automatic triggering. New user-saved JSX/Razor markup `@complix` comments run after successful autosave and two idle seconds in the open Code panel. Added shared detection, the EditorInstructions UI, private persisted instruction identity and scoped view, enable/dismiss reducers and a procedure that verifies the saved comment/revision before reusing Gemini/Nemotron. Accepted requests deduplicate across tabs/reloads; generated/inherited markers stay inert through unrelated saves; ambiguous duplicates and moved processed comments do not automatically run. Failed admission persists as blocked and needs explicit enable/retry. Source edits, job cancellation, deadlines and access are checked before every provider call and final acceptance. Results remain separate unverified candidates; newer local/saved edits and the working preview are preserved.
@@ -606,3 +628,29 @@ Added @babel/parser 8.1.0 for actual TSX comment parsing (official Babel parser 
 Validation actually run: final frontend/module strict typechecks, Vite production build and backend compilation passed; Vite retains a >500 kB warning (the parser increases the frontend bundle). Three detection tests passed. Final focused integration/browser run: 12 passed, exit 0, frontend 53573/backend 53500/database complix-comment-focused. Coverage includes both React/Blazor automatic execution and reload deduplication, idempotent concurrent claim, access isolation, shared rate limits after transcript clear, stale edits, cancellation with no late acceptance/final Gemini call, oversized-context rejection without job creation, removed markers and inert provider-generated markers. Existing draft/chat/component regressions in that focused run also passed. Initial focused assertions were corrected for string-valued procedure rejections; initial React browser run reached reload successfully but exceeded the 45 s Windows compile budget, so the new browser tests use 120 s.
 
 Full regression attempted on frontend 53473/backend 53400/database complix-comment-regression: 45 passed, 4 skipped, 39 did not run and 1 failed. The serial foundation group stopped at the existing setup helper's `Theme` selectOption locator, which does not match the current questionnaire choice UI. That separate in-progress setup flow was left unchanged. The complete suite is not green. git diff --check passed. No real provider/E2B calls, operator credential reads, local application publication, commit or push. A data-preserving backend publication and browser reload are needed before using the new API in the running app; paid real-model acceptance and broader Razor syntax remain unverified/future.
+
+### Setup wizard follow-up - November 8, 2026
+
+The browser failures recorded above were not a backend disconnect.
+- **Cause:** the questionnaire `<select>` elements sat inside their `<label>`, so their accessible names included the selected option ("Theme No preference"). The `Theme` locator therefore never matched. The 1006 websocket close came from test teardown after the timeout. A tracing run confirmed the server stayed responsive.
+- **Fix:** each questionnaire select now has an explicit `aria-label`. This also improves screen-reader names.
+- **Debug instrumentation:** removed.
+
+Validation actually run after the other session finished:
+- Typecheck and production build passed.
+- 6 focused setup tests passed: 2 migrated UI tests, the full browser wizard with questionnaire, PDF extraction, two generated starters, progress and library, and 3 API tests.
+- Full Playwright suite passed: 85 passed, 4 skipped (opt-in live E2B specs), exit 0, frontend 54173 / backend 54100 / database complix-full-regression. This includes the editor-comment-instruction tests from the other session.
+
+Still pending:
+- Local republish of `complix-local`.
+- A real-provider starter run (paid, owner approval needed).
+- Separating the two uncommitted features into reviewable commits. The working tree is on `feat/editor-comment-instructions`.
+
+Later the same day (owner-approved):
+- **Published:** local `complix-local` with `--delete-data=never`. A read-only describe confirmed the setup reducers, `starter_task` and the scheduled `run_starter_task` are live.
+- **Real-provider starter run:** done on a separate throwaway database (`complix-starter-live`, local signed tokens, operator Gemini + Nemotron credentials; deleted afterwards).
+  - Input: a React project with a questionnaire (dashboard, minimal/corporate, #1f6f54 primary, 8px corners, subtle shadows, Inter, WCAG 2.2 AA).
+  - Result: all four starters (Button, TextInput, KpiCard, Modal) finished in 94 s total, about 22 s each, with no failures.
+  - Each produced a source file, README.md and examples/Preview.tsx that apply the questionnaire values.
+  - Imports stayed within the React preview environment (React, lucide-react, CVA, clsx, tailwind-merge, Radix Slot).
+- **Not run:** E2B compile/preview of the generated starters, so their build success is unverified.
