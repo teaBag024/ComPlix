@@ -14,6 +14,5 @@ export default {
   projectId: __t.u64(),
   requestId: __t.string(),
   request: __t.string(),
-  referenceIds: __t.array(__t.u64()),
   scenario: __t.string(),
 };

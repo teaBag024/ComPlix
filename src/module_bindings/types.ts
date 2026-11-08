@@ -10,6 +10,28 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Component = __t.object("Component", {
+  id: __t.u64(),
+  projectId: __t.u64(),
+  name: __t.string(),
+  category: __t.string(),
+  rootPath: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Component = __Infer<typeof Component>;
+
+export const ComponentChatMessage = __t.object("ComponentChatMessage", {
+  id: __t.u64(),
+  componentId: __t.u64(),
+  projectId: __t.u64(),
+  senderIdentity: __t.identity(),
+  role: __t.string(),
+  content: __t.string(),
+  jobId: __t.option(__t.u64()),
+  createdAt: __t.timestamp(),
+});
+export type ComponentChatMessage = __Infer<typeof ComponentChatMessage>;
+
 export const ComponentDraft = __t.object("ComponentDraft", {
   jobId: __t.u64(),
   projectId: __t.u64(),
@@ -19,6 +41,7 @@ export const ComponentDraft = __t.object("ComponentDraft", {
   },
   updatedBy: __t.identity(),
   updatedAt: __t.timestamp(),
+  componentId: __t.u64(),
 });
 export type ComponentDraft = __Infer<typeof ComponentDraft>;
 
@@ -57,6 +80,7 @@ export const GenerationJob = __t.object("GenerationJob", {
   diagnostic: __t.string(),
   createdAt: __t.timestamp(),
   model: __t.string(),
+  componentId: __t.u64(),
 });
 export type GenerationJob = __Infer<typeof GenerationJob>;
 
@@ -230,8 +254,14 @@ export const UserProfile = __t.object("UserProfile", {
 });
 export type UserProfile = __Infer<typeof UserProfile>;
 
+export const VisibleComponentChat = __t.object("VisibleComponentChat", {});
+export type VisibleComponentChat = __Infer<typeof VisibleComponentChat>;
+
 export const VisibleComponentDrafts = __t.object("VisibleComponentDrafts", {});
 export type VisibleComponentDrafts = __Infer<typeof VisibleComponentDrafts>;
+
+export const VisibleComponents = __t.object("VisibleComponents", {});
+export type VisibleComponents = __Infer<typeof VisibleComponents>;
 
 export const VisibleGenerationJobs = __t.object("VisibleGenerationJobs", {});
 export type VisibleGenerationJobs = __Infer<typeof VisibleGenerationJobs>;

@@ -58,7 +58,7 @@ test('persisted NVIDIA manifests reject unsafe paths, escaped credentials and in
     expect(() => parseNvidiaDraft(body([{ path, content: 'draft' }]), fakeKey)).toThrow('unsafe');
   }
   expect(() => parseNvidiaDraft(body([{ path: 'A.ts', content: '' }, { path: 'a.ts', content: '' }]), fakeKey)).toThrow('unsafe');
-  expect(() => parseNvidiaDraft(body([{ path: 'A.ts', content: 'draft' }], 'length'), fakeKey)).toThrow('incomplete');
+  expect(() => parseNvidiaDraft(body([{ path: 'A.ts', content: 'draft' }], 'length'), fakeKey)).toThrow('output limit');
   const escaped = body([{ path: 'A.ts', content: fakeKey }]).split(fakeKey).join('\\u0073' + fakeKey.slice(1));
   expect(() => parseNvidiaDraft(escaped, fakeKey)).toThrow('unusable');
   expect(() => parseNvidiaDraft(body([{ path: 'A.ts', content: 'x'.repeat(256 * 1024 + 1) }]), fakeKey)).toThrow('size limit');

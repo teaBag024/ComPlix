@@ -1,10 +1,11 @@
+import { createPreviewRuntime } from './previewRuntime';
 import { isChatMode } from '../shared/generationWorkflow';
 import { useDraftEditor } from './useDraftEditor';
 import { StackPreview } from './StackPreview';
 import { selectStackAdapter, type TargetStack } from '../shared/stackAdapters';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import type { DbConnection } from './module_bindings';
-import type { GenerationJob, ProjectReference, ComponentDraft } from './useWorkspace';
+import type { GenerationJob, ProjectReference, ComponentDraft, Component, ComponentMessage } from './useWorkspace';
 import { generationStages } from '../shared/generationWorkflow';
 import { ProjectChat } from './ProjectChat';
 
@@ -17,15 +18,37 @@ const examples = [
   { id: 'login-form', name: 'LoginForm', group: 'Compositions', source: '<!doctype html>\n<style>body{font:14px Inter,Arial,sans-serif;padding:24px}.form{max-width:320px;display:grid;gap:12px}label{display:grid;gap:5px}input{padding:9px;border:1px solid #cbd6ce;border-radius:7px}button{padding:9px;background:#214e34;color:white;border:0;border-radius:7px}</style>\n<form class="form"><strong>Welcome back</strong><label>Email<input type="email"></label><label>Password<input type="password"></label><button type="button">Sign in</button></form>' },
   { id: 'filter-panel', name: 'FilterPanel', group: 'Compositions', source: '<!doctype html>\n<style>body{font:14px Inter,Arial,sans-serif;padding:24px}.panel{max-width:320px;padding:16px;border:1px solid #e1e8e3;border-radius:9px;display:grid;gap:12px}label{display:grid;gap:5px}input,select{padding:8px;border:1px solid #cbd6ce;border-radius:7px}</style>\n<form class="panel"><strong>Filter results</strong><label>Search<input placeholder="Search components"></label><label>Category<select><option>All components</option><option>Common</option></select></label></form>' },
 ];
-export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, drafts, references, mode, chatEnabled = false, connection }: {
-  projectId: bigint; target: TargetStack; draftGuard?: { current: (() => Promise<unknown>) | undefined }; editable: boolean; jobs: GenerationJob[]; drafts: ComponentDraft[]; references: ProjectReference[]; mode: string; chatEnabled?: boolean; connection: DbConnection;
+export function ProjectLibrary({ projectId, target, previewToken, draftGuard, editable, jobs: allJobs, components, messages, drafts, references, mode, chatEnabled = false, connection }: {
+  projectId: bigint; target: TargetStack; previewToken?: string; draftGuard?: { current: (() => Promise<unknown>) | undefined }; editable: boolean; jobs: GenerationJob[]; components: Component[]; messages: ComponentMessage[]; drafts: ComponentDraft[]; references: ProjectReference[]; mode: string; chatEnabled?: boolean; connection: DbConnection;
 }) {
+  const [selectedComponentId, setSelectedComponentId] = useState(() => new URLSearchParams(location.search).get('selected') ?? '');
+  const component = components.find(row => row.id.toString() === selectedComponentId);
+  const jobs = allJobs.filter(row => row.componentId === (component?.id ?? 0n));
+  const creation = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('common');
+  const [initialPrompt, setInitialPrompt] = useState('');
+  const [creationError, setCreationError] = useState('');
+  const [creating, setCreating] = useState(false);
+  function selectComponent(id: string) {
+    const url = new URL(location.href); url.searchParams.set('selected', id); history.pushState(null, '', url);
+    chatAttempt.current++; setChatPending(false);
+    setSelectedComponentId(id); setSelectedExample(''); setSelectedJob(''); setSelectedFile('');
+  }
+  useEffect(() => {
+    const restore = () => { void editor.flush().then(() => { chatAttempt.current++; setChatPending(false); setSelectedComponentId(new URLSearchParams(location.search).get('selected') ?? ''); setSelectedJob(''); setSelectedExample(''); }).catch(cause => { setError(String(cause)); const url = new URL(location.href); if (selectedComponentId) url.searchParams.set('selected', selectedComponentId); else url.searchParams.delete('selected'); history.replaceState(null, '', url); }); };
+    window.addEventListener('popstate', restore); return () => window.removeEventListener('popstate', restore);
+  }, []);
   const adapter = selectStackAdapter(target);
+  const previewRuntime = useMemo(() => {
+    const endpoint = import.meta.env.VITE_PREVIEW_CONTROLLER_URL;
+    try { return endpoint && previewToken ? createPreviewRuntime(endpoint, previewToken) : undefined; }
+    catch { return undefined; }
+  }, [previewToken]);
   const [request, setRequest] = useState('Create a reusable Common Button with documentation and an example.');
   const [scenario, setScenario] = useState('success');
-  const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
   const [selectedJob, setSelectedJob] = useState('');
-  const [selectedExample, setSelectedExample] = useState(jobs.length ? '' : 'button');
+  const [selectedExample, setSelectedExample] = useState(jobs.length || selectedComponentId ? '' : 'button');
   const [view, setView] = useState('source');
   const [selectedFile, setSelectedFile] = useState('');
   const [componentListOpen, setComponentListOpen] = useState(true);
@@ -41,7 +64,7 @@ export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, 
   lastSelectedJob.current = job;
   const selectedJobDeleted = !!job && !jobs.some(row => row.id === job.id);
   useEffect(() => { if (job && !selectedJob && !selectedExample) setSelectedJob(job.id.toString()); }, [job?.id, selectedJob, selectedExample]);
-  const example = examples.find(item => item.id === selectedExample) ?? (!job && !ordered.length ? examples[0] : undefined);
+  const example = examples.find(item => item.id === selectedExample) ?? (!component && !job && !ordered.length ? examples[0] : undefined);
   const candidates = ordered.filter(row => ['preview_ready', 'draft_ready'].includes(row.state) && (() => { try { return JSON.parse(row.artifacts).files?.length > 0; } catch { return false; } })());
   const hasActive = jobs.some(active);
   const previewedJobs = useRef(new Set<string>());
@@ -72,7 +95,7 @@ export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, 
   function fail(cause?: unknown) {
     const message = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : '';
     const safe = ['Draft changed. Your local edits were not overwritten.', 'Draft save could not be confirmed. Your local edits are still shown. Check your connection and retry.', 'Draft files exceed 256 KiB.', 'Remove credentials from draft files.', 'Project edit access is required.', 'Generation providers are not configured.', 'This project already has an active generation job.',
-      'Generation history limit reached for this prototype.', 'Choose references from this project only.', 'Selected generation context exceeds 64 KiB. Choose fewer references.', 'Your session expired. Sign in again and retry.', 'ComPlix chat is not configured. Contact the operator.', 'Chat limit reached. Wait a minute before sending another message.', 'Remove credentials from the request or project context.', 'Draft changed. Review the latest saved version before sending.', 'Selected draft is unavailable. Select a saved draft from this project.', 'Reply could not be confirmed within 75 seconds. Cancel any waiting reply before retrying.'];
+      'Generation history limit reached for this prototype.', 'Complete project context exceeds 64 KiB. Shorten or remove project references or reduce draft/context size before sending.', 'Your session expired. Sign in again and retry.', 'ComPlix chat is not configured. Contact the operator.', 'Chat limit reached. Wait a minute before sending another message.', 'Remove credentials from the request or project context.', 'Draft changed. Review the latest saved version before sending.', 'Selected draft is unavailable. Select a saved draft from this project.', 'Reply could not be confirmed within 75 seconds. Cancel any waiting reply before retrying.'];
     const visible = safe.find(text => message.includes(text)) ?? 'Message could not be confirmed. Check your connection and project access. If a reply is still waiting, cancel it before retrying.';
     setError(visible);
     return visible;
@@ -87,19 +110,30 @@ export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, 
         await connection.reducers.advanceMockGeneration({ jobId: job.id, expectedState });
         const latest = [...connection.db.visibleGenerationJobs.iter()].find(row => row.id === job.id);
         if (!latest || !active(latest)) break;
-      }
+      } 
     } catch { fail(); }
     finally { running.current = false; setBusy(false); }
   }
   return <section className="component-library">
-    <p role="status">{adapter ? `${adapter.label}: adapter available; isolated build/runtime not connected.` : 'Unsupported target stack: no matching adapter. Code and Docs remain available; compilation and preview are unavailable.'}</p>
+    <p role="status">{adapter ? `${adapter.label}: ${previewRuntime ? 'preview controller configured; build to verify the saved draft.' : 'adapter available; isolated build/runtime not connected.'}` : 'Unsupported target stack: no matching adapter. Code and Docs remain available; compilation and preview are unavailable.'}</p>
+    <dialog ref={creation} aria-labelledby="create-component-title"><form onSubmit={event => {
+      event.preventDefault(); setCreating(true); setCreationError('');
+      void (async () => {
+        await connection.reducers.createComponent({ projectId, name, category });
+        const created = [...connection.db.visibleComponents.iter()].find(row => row.projectId === projectId && row.name.toLowerCase() === name.trim().toLowerCase());
+        if (!created) throw new Error('Creation could not be confirmed.');
+        selectComponent(created.id.toString()); creation.current?.close(); setName(''); setInitialPrompt('');
+        if (initialPrompt.trim()) { const requestId = crypto.randomUUID(); await connection.procedures.generateProjectChat({ projectId, componentId: created.id, requestId, request: initialPrompt }); const result = [...connection.db.visibleGenerationJobs.iter()].find(row => row.requestId === requestId); if (result?.state === 'draft_ready' && hasFiles(result)) setSelectedJob(result.id.toString()); }
+      })().catch(cause => setCreationError(cause instanceof Error ? cause.message : 'Component creation failed.')).finally(() => setCreating(false));
+    }}><h3 id="create-component-title">New component</h3><label>Component name<input required maxLength={80} pattern="[A-Za-z0-9_-]+" value={name} onChange={event => setName(event.target.value)} /></label><fieldset><legend>Category</legend>{['common', 'composition'].map(value => <label key={value}><input type="radio" name="category" value={value} checked={category === value} onChange={() => setCategory(value)} />{value === 'common' ? 'Common' : 'Composition'}</label>)}</fieldset><label>Initial prompt (optional)<textarea maxLength={4000} value={initialPrompt} onChange={event => setInitialPrompt(event.target.value)} /></label>{creationError && <p role="alert">{creationError}</p>}<button disabled={creating}>Create component</button><button disabled={creating} type="button" onClick={() => creation.current?.close()}>Cancel</button></form></dialog>
+    {creationError && !creation.current?.open && <p role="alert">Component created; initial chat failed. {creationError}</p>}
     {error && <p role="alert">{error}</p>}
     {selectedJobDeleted && <p role="alert">This draft was deleted in another session. Local text is retained here; copy any changes before discarding edits or leaving.</p>}
     <div className={'studio-columns' + (componentListOpen ? '' : ' list-hidden')}>
-        {componentListOpen && <aside className="component-list" aria-label="Available components"><div className="component-list-heading"><h3>Components</h3>
+        {componentListOpen && <aside className="component-list" aria-label="Available components"><div className="component-list-heading"><h3>Components</h3>{editable && <button disabled={editor.unsaved} type="button" onClick={() => creation.current?.showModal()}>+ New Component</button>}
           <button type="button" className="secondary" aria-expanded="true" onClick={() => setComponentListOpen(false)}>Hide list</button></div>
           {['Common foundation', 'Compositions'].map(group => <section className="component-group" key={group}>
-            <div className="eyebrow">{group}</div><ul>{examples.filter(item => item.group === group).map(item => <li key={item.id}>
+            <div className="eyebrow">{group}</div><ul>{components.filter(row => row.category === (group === 'Common foundation' ? 'common' : 'composition')).map(row => <li key={row.id.toString()}><button type="button" className="component-link" disabled={editor.unsaved || chatPending} aria-pressed={component?.id === row.id} onClick={() => selectComponent(row.id.toString())}>{row.name}</button><span>{row.rootPath}</span>{component?.id === row.id && <ul>{files.map(item => <li key={item.path}><button className="component-link" type="button" onClick={() => { setSelectedFile(item.path); setView(/\.(md|mdx|xml)$/i.test(item.path) ? 'documentation' : 'source'); }}>{item.path}</button></li>)}</ul>}</li>)}{!component && examples.filter(item => item.group === group).map(item => <li key={item.id}>
               <button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={selectedExample === item.id} onClick={() => {
                 setSelectedExample(item.id); setSelectedJob(''); setSelectedFile(''); setView('source');
               }}>{item.name}</button><span>UI example · not in library</span>
@@ -109,7 +143,7 @@ export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, 
           <ul>{candidates.map(candidate => <li key={candidate.id.toString()}>
             <button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={candidate.id === job?.id} onClick={() => { setSelectedExample(''); setSelectedJob(candidate.id.toString()); setView('preview'); }}>
               {candidate.request}
-            </button><span>{candidate.mode === 'gemini' ? 'Gemini + Nemotron draft · unverified' : isChatMode(candidate.mode) ? 'NVIDIA draft · unverified' : 'Mock candidate'}</span>
+            </button><span>{candidate.componentId && !candidate.model ? 'Starter draft - unverified' : candidate.mode === 'gemini' ? 'Gemini + Nemotron draft · unverified' : isChatMode(candidate.mode) ? 'NVIDIA draft · unverified' : 'Mock candidate'}</span>
           </li>)}</ul></section>}
         </aside>}
         <section className="studio-preview-pane" aria-label="Component preview and code">
@@ -118,19 +152,24 @@ export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, 
           {view === 'preview' && (job && preview && job.state === 'preview_ready'
             ? <iframe title="Mock component preview" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={preview.content} />
             : example ? <><p className="example-disclaimer">Illustrative UI example — not generated or saved to this library.</p><iframe title={'Example preview: ' + example.name} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={example.source} /></>
-              : <div className="library-empty-state"><span className="eyebrow">Current library</span><strong>No published components yet</strong><StackPreview adapter={adapter} revision={{ projectId: projectId.toString(), revisionId: job?.id.toString() ?? 'empty', target, files }} /></div>)}
+              : !job ? <div className="library-empty-state"><span className="eyebrow">Current library</span><strong>No published components yet</strong><p>Select a saved draft to build and inspect its actual compiled output.</p></div> : null)}
+          {!example && !preview && <div hidden={view !== 'preview'}><StackPreview key={job?.id.toString() ?? 'empty'} adapter={adapter} runtime={previewRuntime} editable={editable} active={view === 'preview'}
+                revision={{ projectId: projectId.toString(), revisionId: `${job?.id ?? 'empty'}:${editor.revision}`, sourceJobId: job?.id.toString(), draftRevision: editor.revision.toString(), target, files }}
+                flush={async () => { const savedRevision = await editor.flush(); return { projectId: projectId.toString(), revisionId: `${job?.id ?? 'empty'}:${savedRevision}`, sourceJobId: job?.id.toString(), draftRevision: savedRevision.toString(), target, files: editor.files }; }} /></div>}
           {view === 'source' && <>{files.length ? <><label>Candidate file<select aria-label="Candidate file" value={file?.path ?? ''} onChange={event => setSelectedFile(event.target.value)}>{files.map(item => <option key={item.path}>{item.path}</option>)}</select></label><p role="status" data-testid="draft-save-status">{editor.status}</p>
               <textarea className="code-editor" aria-label="Candidate code" data-testid="candidate-source" spellCheck={false} readOnly={!canEdit} value={file?.content ?? ''} onChange={event => file && editor.change(file.path, event.target.value)} />
               {editor.error && <div role="alert"><p>{editor.error}</p>{!editor.error.includes('Draft changed.') && <button type="button" onClick={() => editor.retry()}>Retry draft save</button>}<button type="button" className="secondary" onClick={() => editor.reload()}>Discard local edits and load saved draft</button></div>}
-              <p className="note">{canEdit ? 'Edits autosave as an unverified draft. Source, examples and documentation share this file set; no generated code is executed.' : 'Read-only draft. Illustrative mock fixtures cannot be edited.'}</p></>
+              <p className="note">{canEdit ? 'Edits autosave as an unverified draft. Source, examples and documentation share this file set; build explicitly from Preview to execute a saved revision.' : 'Read-only draft. Illustrative mock fixtures cannot be edited.'}</p></>
             : example ? <><p className="example-disclaimer">Illustrative source — not generated or saved to this library.</p><pre data-testid="example-source">{example.source}</pre></> : <p>No candidate source files yet.</p>}</>}
           {view === 'documentation' && <><label>Documentation file<select aria-label="Documentation file" value={document?.path ?? ''} onChange={event => setSelectedFile(event.target.value)}>{documents.map(item => <option key={item.path}>{item.path}</option>)}</select></label><pre>{document?.content ?? (example ? 'This UI-only example has no project documentation.' : 'No candidate documentation yet.')}</pre></>}
-          {view === 'validation' && <p>No real validation has run. {!job || !isChatMode(job.mode) ? 'Build/test stages are simulated.' : 'AI generated draft files only; compilation, tests and sandbox preview have not run.'} No output is marked current or export-ready.</p>}
+          {view === 'validation' && <p>{!job || !isChatMode(job.mode) ? 'No real validation has run. Build/test stages are simulated.' : 'No complete component validation or promotion has run. Any compilation result appears in Preview.'} No output is marked current or export-ready.</p>}
         </section>
         <div className="chat-pane">
-          {references.length > 0 && <fieldset disabled={busy || hasActive || !editable}><legend>Reference documents for this message</legend>{references.map(reference => <label className="reference-choice" key={reference.id.toString()}><input type="checkbox" checked={selectedRefs.includes(reference.id.toString())} onChange={event => setSelectedRefs(old => event.target.checked ? [...old, reference.id.toString()] : old.filter(id => id !== reference.id.toString()))} />{reference.filename}</label>)}</fieldset>}
+          <p className="chat-reference-context">{references.length
+            ? `All ${references.length} saved project reference${references.length === 1 ? ' is' : 's are'} included automatically.`
+            : 'No saved project references; any added later will be included automatically.'}</p>
           <p className="note">{job && isChatMode(job.mode) && files.length ? `Chat context: selected draft: ${job.request}` : 'Chat context: project guidance and latest generated draft.'}</p>
-          <ProjectChat jobs={jobs} editable={editable} available={chatEnabled} pending={busy || chatPending || hasActive}
+          <ProjectChat key={component?.id.toString() ?? 'legacy'} component={component} messages={messages.filter(row => row.componentId === component?.id)} clear={async () => { if (component) await connection.reducers.clearComponentChat({ componentId: component.id }); }} jobs={jobs} editable={editable} available={chatEnabled && (!!component || jobs.length > 0)} pending={busy || chatPending || hasActive}
             statusLabel={chatEnabled ? 'ComPlix chat ready' : mode === 'mock' ? 'Local mock workflow' : 'Providers not configured'} cancel={async () => {
               const waiting = jobs.find(row => isChatMode(row.mode) && active(row));
               if (waiting) await connection.reducers.cancelGeneration({ jobId: waiting.id });
@@ -145,12 +184,12 @@ export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, 
               const requestId = crypto.randomUUID();
               if (sourceJobId !== undefined) setSelectedJob(sourceJobId.toString());
               await Promise.race([
-                connection.procedures.generateProjectChat({ projectId, requestId, request: message, referenceIds: selectedRefs.map(BigInt), sourceJobId, expectedDraftRevision }),
+                connection.procedures.generateProjectChat({ projectId, requestId, request: message, sourceJobId, expectedDraftRevision, componentId: component?.id }),
                 new Promise<never>((_, reject) => { timer = window.setTimeout(() => reject(new Error('Reply could not be confirmed within 75 seconds. Cancel any waiting reply before retrying.')), 75000); }),
               ]);
               if (attempt === chatAttempt.current && !editor.isUnsaved()) {
                 const result = [...connection.db.visibleGenerationJobs.iter()].find(row => row.requestId === requestId);
-                if (result?.state === 'draft_ready' && hasFiles(result)) { setSelectedExample(''); setSelectedJob(result.id.toString()); }
+                if (result?.state === 'draft_ready' && hasFiles(result)) { setSelectedExample(''); setSelectedJob(result.id.toString()); setSelectedFile(''); }
                 setView('source');
               }
             } catch (cause) {
@@ -164,10 +203,10 @@ export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, 
         {editable && <form onSubmit={event => {
           event.preventDefault(); setBusy(true); setError('');
           const requestId = crypto.randomUUID();
-          void connection.reducers.createGeneration({ projectId, requestId, request, scenario, referenceIds: selectedRefs.map(BigInt) }).then(() => { setSelectedExample(''); const queued = [...connection.db.visibleGenerationJobs.iter()].find(row => row.requestId === requestId); setSelectedJob(queued?.id.toString() ?? ''); }).catch(fail).finally(() => setBusy(false));
+          void connection.reducers.createGeneration({ projectId, requestId, request, scenario }).then(() => { setSelectedExample(''); const queued = [...connection.db.visibleGenerationJobs.iter()].find(row => row.requestId === requestId); setSelectedJob(queued?.id.toString() ?? ''); }).catch(fail).finally(() => setBusy(false));
         }}><fieldset disabled={busy || hasActive || editor.unsaved || mode !== 'mock'}>
           <label>Component request<textarea aria-label="Component request" required maxLength={4000} value={request} onChange={event => setRequest(event.target.value)} /></label>
-          <p className="note">The job captures this project's saved technologies, guidance and the references you select. Past job context remains in history even if a reference is later removed.</p>
+          <p className="note">The job captures this project's saved technologies, guidance and all saved references. Past job context remains in history even if a reference is later removed.</p>
           <label>Mock outcome<select aria-label="Mock outcome" value={scenario} onChange={event => setScenario(event.target.value)}><option value="success">Preview success fixture</option><option value="generation_failure">Simulated generation failure</option><option value="build_failure">Simulated build failure</option></select></label>
           <button>Queue mock generation</button>
         </fieldset></form>}
@@ -175,7 +214,7 @@ export function ProjectLibrary({ projectId, target, draftGuard, editable, jobs, 
         {!jobs.length && <p>No generation jobs yet.</p>}
         {jobs.length > 0 && <label>Generation history<select disabled={editor.unsaved} aria-label="Generation history" value={job?.id.toString() ?? ''} onChange={event => { setSelectedJob(event.target.value); setDeleting(false); }}>{ordered.map(row => <option key={row.id.toString()} value={row.id.toString()}>{row.request.slice(0, 55)} — {stages[row.state] ?? row.state}</option>)}</select></label>}
         {job && <>
-          <p role="status" data-testid="generation-status">{isChatMode(job.mode) && job.state === 'generating' ? 'ComPlix is thinking' : isChatMode(job.mode) && job.state === 'draft_ready' && !files.length ? 'ComPlix replied' : stages[job.state] ?? job.state} · {isChatMode(job.mode) ? job.mode === 'gemini' ? 'Gemini + Nemotron / unverified draft' : 'NVIDIA / unverified draft' : 'Mock / unverified candidate'}</p>
+          <p role="status" data-testid="generation-status">{isChatMode(job.mode) && job.state === 'generating' ? 'ComPlix is thinking' : isChatMode(job.mode) && job.state === 'draft_ready' && !files.length ? 'ComPlix replied' : stages[job.state] ?? job.state} · {job.componentId && !job.model ? 'Starter / unverified draft' : isChatMode(job.mode) ? job.mode === 'gemini' ? 'Gemini + Nemotron / unverified draft' : 'NVIDIA / unverified draft' : 'Mock / unverified candidate'}</p>
           {job.diagnostic && <p role={job.state === 'failed' ? 'alert' : undefined}>{job.diagnostic}</p>}
           {editable && active(job) && <>{job.mode === 'mock' && <button disabled={busy || mode !== 'mock' || job.mode !== 'mock'} onClick={() => void run(job)}>{job.state === 'queued' ? 'Run mock pipeline' : 'Resume mock pipeline'}</button>}<button className="secondary" onClick={() => void connection.reducers.cancelGeneration({ jobId: job.id }).catch(fail)}>Cancel job</button></>}
           {editable && !active(job) && <><button disabled={editor.unsaved} className="secondary" onClick={() => setDeleting(true)}>Delete job history</button>{deleting && <><p>Delete this job's conversation turn, stored context and candidate files? This cannot be undone.</p><button onClick={() => void connection.reducers.removeGeneration({ jobId: job.id }).then(() => setDeleting(false)).catch(fail)}>Confirm job deletion</button></>}</>}

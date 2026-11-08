@@ -5,6 +5,7 @@ import path from 'node:path';
 import { randomUUID, sign } from 'node:crypto';
 import { DbConnection, tables } from '../src/module_bindings';
 import { ensureLocalKeys } from '../scripts/local-keys.mjs';
+import { createPreviewAuthorizer } from '../generation/previewAuthorization.mjs';
 
 const backendPort = Number(process.env.COMPLIX_TEST_BACKEND_PORT ?? 3100);
 const uri = `http://127.0.0.1:${backendPort}`;
@@ -88,7 +89,7 @@ async function connect(token: string, register = true): Promise<Session> {
           ctx.subscriptionBuilder().onApplied(() => {
             clearTimeout(timeout); resolve({ conn: ctx, token });
           }).onError(() => { clearTimeout(timeout); reject(new Error('Subscription denied')); })
-            .subscribe(register ? [tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.generationSettings] : tables.myProject);
+            .subscribe(register ? [tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponents, tables.visibleComponentChat, tables.generationSettings] : tables.myProject);
         };
         void initialize().catch(() => { clearTimeout(timeout); reject(new Error('Profile denied')); });
       }).onConnectError(() => { clearTimeout(timeout); reject(new Error('Connection denied')); })
@@ -121,6 +122,16 @@ async function openProjectPage(page: import('@playwright/test').Page, name: stri
   if (shared) await page.getByRole('button', { name: 'Shared projects', exact: true }).click();
   await page.getByRole('button', { name: 'Open project ' + name, exact: true }).click();
 }
+
+async function createBrowserComponent(page: import('@playwright/test').Page, name = 'Button') {
+  await page.getByRole('button', { name: '+ New Component', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New component', exact: true });
+  await dialog.getByLabel('Component name', { exact: true }).fill(name);
+  await dialog.getByRole('button', { name: 'Create component', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Chat: ' + name, exact: true })).toBeVisible();
+}
+
 async function expandProjectCreation(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: '+ Create project', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Create a project you own' })).toBeVisible();
@@ -142,24 +153,34 @@ test.beforeAll(async () => {
     if (url.startsWith('https://generativelanguage.googleapis.com/')) {
       if (options.headers['x-goog-api-key'] !== 'synthetic-operator-gemini-credential' || options.body.includes('synthetic-operator-') || body.generationConfig.thinkingConfig.thinkingLevel !== 'LOW') throw new Error('Gemini fixture contract failed');
       const snapshot = JSON.parse(body.contents[0].parts[0].text);
-      const text = snapshot.request === 'Explain the library' ? 'We can build a reusable Common foundation first.' : 'I prepared a draft using your project guidance.';
+      if (snapshot.request === 'Generate using every project reference' && (!snapshot.references.some((reference: any) => reference.filename === 'design.md' && reference.content.includes('automatic-reference-marker')) || JSON.stringify(snapshot.references).includes('other-project-marker'))) throw new Error('Gemini fixture did not receive only the current project references');
+      if (snapshot.request === 'Token expiry fixture' && body.contents.length === 1) {
+        // The local runtime has no procedure sleep. Test-only read transactions advance wall time.
+        const until = ctx.withTx(tx => tx.timestamp.microsSinceUnixEpoch) + 3000000n;
+        while (ctx.withTx(tx => tx.timestamp.microsSinceUnixEpoch) < until) { /* bounded three-second fixture delay */ }
+      }
+      const toolFailed = body.contents[2]?.parts[0]?.functionResponse?.response?.status === 'generation_incomplete';
+      const text = toolFailed ? 'ComPlix could not complete this component change. Your saved draft is intact.' : snapshot.request === 'Explain the library' ? 'We can build a reusable Common foundation first.' : 'I prepared a draft using your project guidance.';
       const parts = snapshot.request === 'Explain the library' || body.toolConfig.functionCallingConfig.mode === 'NONE'
-        ? [{ text }] : [{ functionCall: { name: 'generate_component_changes', id: 'fixture-call', args: { instructions: snapshot.request } }, thoughtSignature: 'opaque-fixture-signature' }];
+        ? [{ text }] : [{ functionCall: { name: 'generate_component_changes', id: 'fixture-call', args: { instructions: snapshot.request, filePaths: ['Button.tsx', 'README.md'] } }, thoughtSignature: 'opaque-fixture-signature' }];
       if (body.contents.length > 1 && body.contents[1].parts[0].thoughtSignature !== 'opaque-fixture-signature') throw new Error('Signature was lost');
       return { status: 200, text: () => JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { role: 'model', parts } }] }) };
     }
     if (url !== 'https://integrate.api.nvidia.com/v1/chat/completions' || !options.headers.Authorization.startsWith('Bearer synthetic-') || body.max_tokens !== 4096 || body.stream !== false || body.reasoning_effort !== 'none' || !body.response_format.json_schema.strict || options.body.includes(options.headers.Authorization.slice(7))) throw new Error('Fixture request contract failed');
-    if (JSON.parse(body.messages[1].content).request === 'Draft race fixture') {
-      const editing = JSON.parse(body.messages[1].content).editing;
+    const nvidiaSnapshot = JSON.parse(body.messages[1].content);
+    if (nvidiaSnapshot.request === 'Generate using every project reference' && (!nvidiaSnapshot.references.some((reference: any) => reference.filename === 'design.md' && reference.content.includes('automatic-reference-marker')) || JSON.stringify(nvidiaSnapshot.references).includes('other-project-marker'))) throw new Error('Nemotron fixture did not receive only the current project references');
+    if (nvidiaSnapshot.request === 'Draft race fixture') {
+      const editing = nvidiaSnapshot.editing;
       ctx.withTx(tx => {
         const current = tx.db.componentDraft.jobId.find(BigInt(editing.jobId))!;
         tx.db.componentDraft.jobId.update({ ...current, revision: current.revision + 1n, files: current.files.map(file => ({ ...file, content: file.content + '\\n// concurrent edit' })) });
       });
     }
     if (JSON.parse(body.messages[1].content).request === 'Explain the library') return { status: 200, text: () => JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ reply: 'We can build a reusable Common foundation first.', files: [] }) } }] }) };
+    if (JSON.parse(body.messages[1].content).request === 'Truncated draft fixture') return { status: 200, text: () => JSON.stringify({ choices: [{ finish_reason: 'length' }] }) };
     return body.messages[1].content.includes('Rejected key fixture') ? { status: 401, text: () => options.headers.Authorization } : { status: 200, text: () => ${JSON.stringify(fixtureBody)} };
   })`;
-  writeFileSync(path.join(nvidiaTestModule, 'src/index.ts'), readFileSync('spacetimedb/src/index.ts', 'utf8').replace('ctx.http.fetch(endpoint,', transport + '(endpoint,').replace('ctx.http.fetch(url,', transport + '(url,').replace('ctx.timestamp.microsSinceUnixEpoch + 90000000n), jobId: inserted.id', "ctx.timestamp.microsSinceUnixEpoch + (args.request === 'Deadline reply fixture' ? 2000000n : 90000000n)), jobId: inserted.id").replaceAll('if (!claim.call) return {};', "if (!claim.call || ['Pending reply fixture', 'Deadline reply fixture'].includes(args.request)) return {};"));
+  writeFileSync(path.join(nvidiaTestModule, 'src/index.ts'), readFileSync('spacetimedb/src/index.ts', 'utf8').replace('const payload = jwt.fullPayload;', 'const payload = { ...jwt.fullPayload, exp: jwt.fullPayload.fixture_exp ?? jwt.fullPayload.exp };').replace('ctx.http.fetch(endpoint,', transport + '(endpoint,').replace('ctx.http.fetch(url,', transport + '(url,').replace('ctx.timestamp.microsSinceUnixEpoch + 90000000n), jobId: inserted.id', "ctx.timestamp.microsSinceUnixEpoch + (args.request === 'Deadline reply fixture' ? 2000000n : 90000000n)), jobId: inserted.id").replaceAll('if (!claim.call) return {};', "if (!claim.call || ['Pending reply fixture', 'Deadline reply fixture'].includes(args.request)) return {};"));
   writeFileSync(path.join(nvidiaTestModule, 'package.json'), JSON.stringify({ type: 'module', dependencies: { spacetimedb: '2.14.1' } }));
   writeFileSync(path.join(nvidiaTestModule, 'tsconfig.json'), readFileSync('spacetimedb/tsconfig.json'));
   await startServer();
@@ -797,6 +818,7 @@ test('workspace explains personal ownership, per-project stacks and multiple org
   await expect(page.getByRole('complementary', { name: 'Available components', exact: true }).getByRole('button', { name: 'Button', exact: true })).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Available components', exact: true }).getByRole('button', { name: 'LoginForm', exact: true })).toBeVisible();
   await expect(page.getByTestId('example-source')).toContainText('Primary action');
+  expect(await page.getByLabel('Project conversation').evaluate(element => element.clientHeight)).toBeGreaterThan(280);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.locator('iframe[title="Example preview: Button"]')).toBeVisible();
   await page.getByRole('button', { name: 'Code', exact: true }).click();
@@ -983,17 +1005,18 @@ test('generation jobs enforce access, snapshots, idempotency, cancellation and s
   await viewer.conn.reducers.acceptInvitation({ invitationId: [...viewer.conn.db.myInvitations.iter()][0].id });
   await owner.conn.reducers.uploadReference({ projectId: other.id, filename: 'private.md', purpose: 'design', bytes: new TextEncoder().encode('Other project only') });
   await expect.poll(() => [...owner.conn.db.visibleReferences.iter()].length).toBe(1);
-  const privateRef = [...owner.conn.db.visibleReferences.iter()][0];
-  const args = { projectId: project.id, requestId: randomUUID(), request: 'Common Button', referenceIds: [], scenario: 'success' };
+  await owner.conn.reducers.uploadReference({ projectId: project.id, filename: 'project.md', purpose: 'design', bytes: new TextEncoder().encode('Only this project reference belongs in the snapshot.') });
+  const args = { projectId: project.id, requestId: randomUUID(), request: 'Common Button', scenario: 'success' };
   await expect(viewer.conn.reducers.createGeneration(args)).rejects.toThrow('edit access');
   await expect(outsider.conn.reducers.createGeneration(args)).rejects.toThrow('edit access');
-  await expect(owner.conn.reducers.createGeneration({ ...args, referenceIds: [privateRef.id] })).rejects.toThrow('this project');
+  await expect.poll(() => [...owner.conn.db.visibleReferences.iter()].length).toBe(2);
   await owner.conn.reducers.createGeneration(args);
   await owner.conn.reducers.createGeneration(args); // Request replay creates no duplicate.
   await expect.poll(() => [...owner.conn.db.visibleGenerationJobs.iter()].length).toBe(1);
   await expect.poll(() => [...viewer.conn.db.visibleGenerationJobs.iter()].length).toBe(1);
   const job = [...owner.conn.db.visibleGenerationJobs.iter()][0];
   expect(JSON.parse(job.snapshot).technologies.framework).toBe('Unlisted framework');
+  expect(JSON.parse(job.snapshot).references.map((reference: { filename: string }) => reference.filename)).toEqual(['project.md']);
   expect([...outsider.conn.db.visibleGenerationJobs.iter()]).toHaveLength(0);
   expect((await sql(outsider.token, 'SELECT * FROM generation_job')).ok).toBe(false);
   expect(JSON.stringify(await (await sql(outsider.token, 'SELECT * FROM visible_generation_jobs')).json())).not.toContain('Common Button');
@@ -1019,6 +1042,17 @@ test('generation jobs enforce access, snapshots, idempotency, cancellation and s
   await expect.poll(() => [...viewer.conn.db.visibleGenerationJobs.iter()].length).toBe(0);
 });
 
+test('chat rejects complete project context above 64 KiB without creating a job', async () => {
+  const owner = await connect(await makeToken('oversized-context@example.test', 'Oversized Context'));
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Oversized context project', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: '', libraries: '', versions: '' });
+  await expect.poll(() => [...owner.conn.db.visibleProjects.iter()].length).toBe(1);
+  const project = [...owner.conn.db.visibleProjects.iter()][0];
+  await owner.conn.reducers.uploadReference({ projectId: project.id, filename: 'large.md', purpose: 'design', bytes: new TextEncoder().encode('x'.repeat(66 * 1024)) });
+  const error = await owner.conn.procedures.generateProjectChat({ projectId: project.id, requestId: randomUUID(), request: 'Explain this project' }).then(() => '', cause => String(cause));
+  expect(error).toContain('Complete project context exceeds 64 KiB');
+  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(0);
+});
+
 test('Library mock workflow persists candidates, isolates preview and preserves earlier results on failure', async ({ browser }) => {
   const token = await makeToken('library-browser@example.test', 'Library Browser');
   const owner = await connect(token);
@@ -1027,7 +1061,7 @@ test('Library mock workflow persists candidates, isolates preview and preserves 
   const page = await context.newPage(); await page.goto('/');
   await openProjectPage(page, 'Library UI');
   await page.getByRole('button', { name: 'Components', exact: true }).click();
-  await expect(page.locator('.component-library .status strong')).toHaveText('ComPlix chat ready');
+  await expect(page.getByRole('complementary', { name: 'Chat with ComPlix', exact: true }).getByText('ComPlix chat ready', { exact: true })).toBeVisible();
   await page.getByText('Developer mock workflow', { exact: true }).click();
   await page.getByLabel('Component request', { exact: true }).fill('First mock Button');
   await page.getByRole('button', { name: 'Queue mock generation', exact: true }).click();
@@ -1080,12 +1114,32 @@ test('disabled generation configuration denies new jobs and publishes no provide
   try {
     const disabled = await connect(token);
     expect([...disabled.conn.db.generationSettings.iter()]).toEqual([{ mode: 'unconfigured', nvidiaEnabled: false, chatEnabled: false }]);
-    await expect(disabled.conn.reducers.createGeneration({ projectId: project.id, requestId: randomUUID(), request: 'Do not run', referenceIds: [], scenario: 'success' })).rejects.toThrow('not configured');
+    await expect(disabled.conn.reducers.createGeneration({ projectId: project.id, requestId: randomUUID(), request: 'Do not run', scenario: 'success' })).rejects.toThrow('not configured');
     expect([...disabled.conn.db.visibleGenerationJobs.iter()]).toHaveLength(0);
     disabled.conn.disconnect();
   } finally { publish(path.resolve('spacetimedb'), true); }
 });
 
+
+test('preview controller reads only authorized saved source and rejects stale or cross-project requests', async () => {
+  const owner = await connect(await makeToken('preview-source-owner@example.test', 'Preview Source Owner'));
+  const outsider = await connect(await makeToken('preview-source-outsider@example.test', 'Preview Source Outsider'));
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Preview source', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
+  const project = [...owner.conn.db.visibleProjects.iter()][0];
+  await owner.conn.procedures.generateProjectChat({ projectId: project.id, requestId: randomUUID(), request: 'Create a preview Button' });
+  const job = [...owner.conn.db.visibleGenerationJobs.iter()][0];
+  const authorizer = createPreviewAuthorizer({ uri, database });
+  const request = { projectId: String(project.id), jobId: String(job.id), revision: '0' };
+  const initial = await authorizer.source(owner.token, request);
+  expect(initial.target.framework).toBe('React'); expect(initial.files[0].path).toBe('Button.tsx');
+  const files = [{ path: 'examples/Preview.tsx', content: 'export default function Preview(){return <button>Saved edit</button>}' }];
+  await owner.conn.reducers.saveComponentDraft({ jobId: job.id, expectedRevision: 0n, files });
+  const edited = await authorizer.source(owner.token, { ...request, revision: '1' });
+  expect(edited.files).toEqual(files);
+  await expect(authorizer.source(owner.token, request)).rejects.toThrow('Draft changed');
+  await expect(authorizer.source(outsider.token, { ...request, revision: '1' })).rejects.toThrow('access');
+  await expect(authorizer.source(owner.token, { ...request, projectId: '1 OR 1=1' })).rejects.toThrow('identifier');
+});
 
 test('editable drafts enforce access and revisions; selected edits enter chat without changing immutable results', async () => {
   const owner = await connect(await makeToken('draft-editor@example.test', 'Draft Editor'));
@@ -1098,7 +1152,7 @@ test('editable drafts enforce access and revisions; selected edits enter chat wi
   await owner.conn.reducers.inviteMember({ organizationId: org.id, email: 'draft-reader@example.test', role: 'member', projectRole: 'viewer', projectId: project.id });
   await expect.poll(() => [...viewer.conn.db.myInvitations.iter()].length).toBe(1);
   await viewer.conn.reducers.acceptInvitation({ invitationId: [...viewer.conn.db.myInvitations.iter()][0].id });
-  const request = { projectId: project.id, requestId: randomUUID(), request: 'Generate first draft', referenceIds: [] };
+  const request = { projectId: project.id, requestId: randomUUID(), request: 'Generate first draft' };
   await owner.conn.procedures.generateProjectChat(request);
   const job = [...owner.conn.db.visibleGenerationJobs.iter()][0];
   const files = [{ path: 'Common/Button.razor', content: '<button>Manual Razor edit</button>' }, { path: 'README.md', content: '# Edited docs' }];
@@ -1136,7 +1190,7 @@ test('multi-file editor autosaves, survives reload and flushes selected edits be
   const owner = await connect(token);
   await owner.conn.reducers.createProjectWithDetails({ name: 'Editor workspace', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
   const project = [...owner.conn.db.visibleProjects.iter()][0];
-  await owner.conn.procedures.generateProjectChat({ projectId: project.id, requestId: randomUUID(), request: 'Generate editable Button', referenceIds: [] });
+  await owner.conn.procedures.generateProjectChat({ projectId: project.id, requestId: randomUUID(), request: 'Generate editable Button' });
   const job = [...owner.conn.db.visibleGenerationJobs.iter()][0];
   const context = await browser.newContext(); await seedBrowser(context, token);
   const page = await context.newPage(); await page.goto('/'); await openProjectPage(page, 'Editor workspace');
@@ -1198,17 +1252,25 @@ test('coordinated chat authorizes calls, stores drafts without keys and handles 
   await owner.conn.reducers.createProjectWithDetails({ name: 'NVIDIA draft project', organizationId: org.id, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
   await expect.poll(() => [...owner.conn.db.visibleProjects.iter()].length).toBe(1);
   const project = [...owner.conn.db.visibleProjects.iter()][0];
+  await owner.conn.reducers.uploadReference({ projectId: project.id, filename: 'design.md', purpose: 'design', bytes: new TextEncoder().encode('automatic-reference-marker: use the sage palette') });
+  await expect.poll(() => [...owner.conn.db.visibleReferences.iter()].length).toBe(1);
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Private unrelated project', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: '', libraries: '', versions: '' });
+  await expect.poll(() => [...owner.conn.db.visibleProjects.iter()].length).toBe(2);
+  const unrelatedProject = [...owner.conn.db.visibleProjects.iter()].find(row => row.id !== project.id)!;
+  await owner.conn.reducers.uploadReference({ projectId: unrelatedProject.id, filename: 'private.md', purpose: 'design', bytes: new TextEncoder().encode('other-project-marker: never include this') });
+  await expect.poll(() => [...owner.conn.db.visibleReferences.iter()].length).toBe(2);
   await owner.conn.reducers.inviteMember({ organizationId: org.id, email: 'nvidia-viewer@example.test', role: 'member', projectRole: 'viewer', projectId: project.id });
   await expect.poll(() => [...viewer.conn.db.myInvitations.iter()].length).toBe(1);
   await viewer.conn.reducers.acceptInvitation({ invitationId: [...viewer.conn.db.myInvitations.iter()][0].id });
   const key = 'synthetic-operator-nvidia-credential';
-  const args = { projectId: project.id, requestId: randomUUID(), request: 'Generate Button', referenceIds: [] };
+  const args = { projectId: project.id, requestId: randomUUID(), request: 'Generate using every project reference' };
   expect(await viewer.conn.procedures.generateProjectChat(args).then(() => 'unexpected success', error => String(error))).toContain('edit access');
   expect(await outsider.conn.procedures.generateProjectChat(args).then(() => 'unexpected success', error => String(error))).toContain('edit access');
   await owner.conn.procedures.generateProjectChat(args);
   await expect.poll(() => { const row = [...owner.conn.db.visibleGenerationJobs.iter()][0]; return row?.state === 'failed' ? row.diagnostic : row?.state; }).toBe('draft_ready');
   const job = [...owner.conn.db.visibleGenerationJobs.iter()][0];
   expect(job.mode).toBe('gemini'); expect(job.model).toBe('gemini-3.8-flash');
+  expect(JSON.parse(job.snapshot).references).toEqual([{ id: expect.any(String), filename: 'design.md', purpose: 'design', content: 'automatic-reference-marker: use the sage palette' }]);
   expect(job.artifacts).toContain('Button.tsx');
   expect(JSON.stringify([...owner.conn.db.visibleGenerationJobs.iter()], (_, value) => typeof value === 'bigint' ? String(value) : value).includes(key)).toBe(false);
   await owner.conn.procedures.generateProjectChat(args);
@@ -1232,28 +1294,37 @@ test('project chat uses operator credentials, retains conversation and never ask
   const token = await makeToken('nvidia-browser@example.test', 'NVIDIA Browser');
   const owner = await connect(token);
   await owner.conn.reducers.createProjectWithDetails({ name: 'Chat project', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
+  const project = [...owner.conn.db.visibleProjects.iter()][0];
+  await owner.conn.reducers.uploadReference({ projectId: project.id, filename: 'design.md', purpose: 'design', bytes: new TextEncoder().encode('All saved references are automatic chat context.') });
+  await expect.poll(() => [...owner.conn.db.visibleReferences.iter()].length).toBe(1);
   const context = await browser.newContext(); await seedBrowser(context, token);
   const page = await context.newPage(); await page.goto('/');
-  await openProjectPage(page, 'Chat project');
+  await openProjectPage(page, 'Chat project'); await createBrowserComponent(page);
   await expect(page.getByLabel('NVIDIA API key', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Generation provider', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('All 1 saved project reference is included automatically.')).toBeVisible();
+  await expect(page.getByLabel('Reference documents for this message')).toHaveCount(0);
+  await expect(page.getByText('Conversation memory starts from the current draft files and project guidance.')).toBeVisible();
   await page.getByLabel('Your message', { exact: true }).fill('Explain the library');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByLabel('Project conversation')).toContainText('Common foundation first');
+  await expect(page.locator('.chat-bubble-user')).toContainText('Explain the library');
+  await expect(page.locator('.chat-bubble-assistant')).toContainText('Common foundation first');
   await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('');
   await page.getByLabel('Your message', { exact: true }).fill('Generate Button');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByTestId('candidate-source')).toHaveValue(/Draft only/);
   await expect(page.getByLabel('Project conversation')).toContainText('prepared a draft');
   const rows = [...owner.conn.db.visibleGenerationJobs.iter()].sort((a, b) => a.id < b.id ? -1 : 1);
-  const snapshot = JSON.parse(rows[1].snapshot);
-  expect(snapshot.conversation[0].request).toBe('Explain the library');
-  expect(snapshot.conversation[0].reply).toContain('Common foundation first');
+  const snapshot = JSON.parse(rows[2].snapshot);
+  expect(snapshot.conversation[0].content).toBe('Explain the library');
+  expect(snapshot.conversation[1].content).toContain('Common foundation first');
   const key = 'synthetic-operator-nvidia-credential';
   expect(await page.evaluate(secret => [...Object.values(sessionStorage), ...Object.values(localStorage)].some(value => value.includes(secret)), key)).toBe(false);
   expect((await page.content()).includes(key)).toBe(false);
   expect((await page.content()).includes('synthetic-operator-gemini-credential')).toBe(false);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(page.getByText('No published components yet')).toHaveCount(0);
   await expect(page.getByText(/No generated preview has run/)).toBeVisible();
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.reload();
@@ -1270,7 +1341,7 @@ test('operator credentials are required and missing configuration produces an ac
     await owner.conn.reducers.createProjectWithDetails({ name: 'Unconfigured chat', organizationId: 0n, framework: 'React', language: '', styling: '', libraries: '', versions: '' });
     await expect.poll(() => [...owner.conn.db.visibleProjects.iter()].length).toBe(1);
     const project = [...owner.conn.db.visibleProjects.iter()][0];
-    expect(await owner.conn.procedures.generateProjectChat({ projectId: project.id, requestId: randomUUID(), request: 'Hello', referenceIds: [] }).then(() => 'unexpected success', error => String(error))).toContain('Contact the operator');
+    expect(await owner.conn.procedures.generateProjectChat({ projectId: project.id, requestId: randomUUID(), request: 'Hello' }).then(() => 'unexpected success', error => String(error))).toContain('Contact the operator');
     expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(0);
     const context = await browser.newContext(); await seedBrowser(context, token);
     const page = await context.newPage(); await page.goto('/'); await openProjectPage(page, project.name);
@@ -1286,7 +1357,7 @@ test('a slow chat reply shows elapsed time and can be cancelled without hiding t
   const owner = await connect(token);
   await owner.conn.reducers.createProjectWithDetails({ name: 'Slow chat project', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: '', libraries: '', versions: '' });
   const context = await browser.newContext(); await seedBrowser(context, token);
-  const page = await context.newPage(); await page.goto('/'); await openProjectPage(page, 'Slow chat project');
+  const page = await context.newPage(); await page.goto('/'); await openProjectPage(page, 'Slow chat project'); await createBrowserComponent(page);
   await page.clock.install();
   await page.getByLabel('Your message', { exact: true }).fill('Pending reply fixture');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
@@ -1311,7 +1382,7 @@ test('a backend deadline expires an abandoned AI job without a connected browser
   await owner.conn.reducers.createProjectWithDetails({ name: 'Deadline project', organizationId: 0n, framework: 'React', language: '', styling: '', libraries: '', versions: '' });
   await expect.poll(() => [...owner.conn.db.visibleProjects.iter()].length).toBe(1);
   const projectId = [...owner.conn.db.visibleProjects.iter()][0].id;
-  await owner.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Deadline reply fixture', referenceIds: [] });
+  await owner.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Deadline reply fixture' });
   await expect.poll(() => [...owner.conn.db.visibleGenerationJobs.iter()][0]?.state).toBe('generating');
   owner.conn.disconnect();
   // No browser/client is required to run the private scheduled deadline.
@@ -1319,7 +1390,7 @@ test('a backend deadline expires an abandoned AI job without a connected browser
   const returning = await connect(token);
   await expect.poll(() => [...returning.conn.db.visibleGenerationJobs.iter()][0]?.state).toBe('failed');
   expect([...returning.conn.db.visibleGenerationJobs.iter()][0].diagnostic).toContain('exceeded its deadline');
-  await returning.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Explain the library', referenceIds: [] });
+  await returning.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Explain the library' });
   await expect.poll(() => [...returning.conn.db.visibleGenerationJobs.iter()].some(row => row.state === 'draft_ready')).toBe(true);
 });
 
@@ -1330,14 +1401,210 @@ test('chat shows the safe follow-up rejection and retains the unsent message', a
   await owner.conn.reducers.createProjectWithDetails({ name: 'Chat error project', organizationId: 0n, framework: 'React', language: '', styling: '', libraries: '', versions: '' });
   await expect.poll(() => [...owner.conn.db.visibleProjects.iter()].length).toBe(1);
   const projectId = [...owner.conn.db.visibleProjects.iter()][0].id;
-  for (let index = 0; index < 5; index++) await owner.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Explain the library', referenceIds: [] });
+  for (let index = 0; index < 5; index++) await owner.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Explain the library' });
   const context = await browser.newContext(); await seedBrowser(context, token);
-  const page = await context.newPage(); await page.goto('/'); await openProjectPage(page, 'Chat error project');
+  const page = await context.newPage(); await page.goto('/'); await openProjectPage(page, 'Chat error project'); await createBrowserComponent(page);
   await page.getByLabel('Your message', { exact: true }).fill('Keep this follow-up');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   const chat = page.getByRole('complementary', { name: 'Chat with ComPlix', exact: true });
   await expect(chat.getByRole('alert')).toHaveText('Chat limit reached. Wait a minute before sending another message.');
   await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('Keep this follow-up');
-  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(5);
+  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(6);
   await context.close();
+});
+
+
+test('component threads isolate context and clearing preserves drafts and identity usage', async () => {
+  const owner = await connect(await makeToken('component-owner@example.test', 'Component Owner'));
+  const outsider = await connect(await makeToken('component-outsider@example.test', 'Outsider'));
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Scoped library', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
+  const project = [...owner.conn.db.visibleProjects.iter()][0];
+  await expect(owner.conn.reducers.createComponent({ projectId: project.id, name: '../escape', category: 'common' })).rejects.toThrow('component name');
+  await owner.conn.reducers.createComponent({ projectId: project.id, name: 'Button', category: 'common' });
+  await owner.conn.reducers.createComponent({ projectId: project.id, name: 'Panel', category: 'composition' });
+  const components = [...owner.conn.db.visibleComponents.iter()];
+  const button = components.find(row => row.name === 'Button')!;
+  const panel = components.find(row => row.name === 'Panel')!;
+  await expect(owner.conn.reducers.createComponent({ projectId: project.id, name: 'button', category: 'common' })).rejects.toThrow('already exists');
+  await expect(outsider.conn.reducers.clearComponentChat({ componentId: button.id })).rejects.toThrow('edit access');
+  await expect(outsider.conn.reducers.createComponent({ projectId: project.id, name: 'Bad', category: 'common' })).rejects.toThrow('edit access');
+  const send = (componentId: bigint, request = 'Explain the library') => owner.conn.procedures.generateProjectChat({ projectId: project.id, componentId, requestId: randomUUID(), request });
+  await send(button.id);
+  await send(panel.id);
+  const panelJob = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.componentId === panel.id && row.request === 'Explain the library')!;
+  expect(JSON.parse(panelJob.snapshot).conversation).toEqual([]);
+  expect(JSON.parse(panelJob.snapshot).commonContracts[0].name).toBe('Button');
+  expect([...owner.conn.db.visibleComponentChat.iter()].filter(row => row.componentId === button.id)).toHaveLength(2);
+  const before = [...owner.conn.db.visibleComponentDrafts.iter()].filter(row => row.componentId === button.id);
+  await owner.conn.reducers.clearComponentChat({ componentId: button.id });
+  expect([...owner.conn.db.visibleComponentChat.iter()].filter(row => row.componentId === button.id)).toHaveLength(0);
+  expect([...owner.conn.db.visibleComponentDrafts.iter()].filter(row => row.componentId === button.id)).toEqual(before);
+  expect([...owner.conn.db.visibleComponentChat.iter()].filter(row => row.componentId === panel.id)).toHaveLength(2);
+  await send(button.id);
+  const latest = [...owner.conn.db.visibleGenerationJobs.iter()].sort((a,b) => a.id > b.id ? -1 : 1)[0];
+  expect(JSON.parse(latest.snapshot).conversation).toEqual([]);
+  expect(JSON.parse(latest.snapshot).candidateFiles.length).toBeGreaterThan(0);
+  await send(button.id); await send(panel.id);
+  await owner.conn.reducers.clearComponentChat({ componentId: button.id });
+  expect([...owner.conn.db.visibleGenerationJobs.iter()].filter(row => row.request === 'Explain the library')).toHaveLength(5);
+  const finalResult = await send(button.id).then(value => JSON.stringify(value), error => String(error));
+  expect(finalResult).toContain('Chat limit reached');
+  expect([...outsider.conn.db.visibleComponents.iter()]).toHaveLength(0);
+  expect([...outsider.conn.db.visibleComponentChat.iter()]).toHaveLength(0);
+});
+
+
+test('component explorer creates drafts, restores selection and clears only the selected chat', async ({ browser }) => {
+  const token = await makeToken('component-browser@example.test', 'Component Browser');
+  const owner = await connect(token);
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Component UI', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
+  const context = await browser.newContext(); await seedBrowser(context, token);
+  const page = await context.newPage(); await page.goto('/'); await openProjectPage(page, 'Component UI');
+  await page.getByRole('button', { name: '+ New Component', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New component', exact: true });
+  await dialog.getByLabel('Component name', { exact: true }).fill('Button');
+  await dialog.getByRole('button', { name: 'Create component', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(/selected=\d+/);
+  await expect(page.getByRole('heading', { name: 'Chat: Button', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Code', exact: true }).click();
+  const code = page.getByLabel('Candidate code', { exact: true });
+  await expect(code).toBeEditable();
+  await code.fill('# My saved Button documentation');
+  await expect(page.getByTestId('draft-save-status')).toHaveText('Draft saved');
+  await page.getByLabel('Your message', { exact: true }).fill('Explain the library');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.locator('.chat-bubble-assistant')).toContainText('Common foundation first');
+  await page.getByRole('button', { name: 'Clear chat', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirm clear chat', exact: true }).click();
+  await expect(page.locator('.chat-bubble')).toHaveCount(0);
+  await expect(code).toHaveValue('# My saved Button documentation');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Chat: Button', exact: true })).toBeVisible();
+  await expect(code).toHaveValue('# My saved Button documentation');
+  await page.getByRole('button', { name: '+ New Component', exact: true }).click();
+  await dialog.getByLabel('Component name', { exact: true }).fill('Button');
+  await dialog.getByRole('button', { name: 'Create component', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('already exists');
+  await expect(dialog.getByLabel('Component name', { exact: true })).toHaveValue('Button');
+  await dialog.getByLabel('Component name', { exact: true }).fill('Panel');
+  await dialog.getByLabel('Composition', { exact: true }).check();
+  await dialog.getByRole('button', { name: 'Create component', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Chat: Panel', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Chat: Button', exact: true })).toBeVisible();
+  await context.close();
+});
+
+
+test('clearing a component cancels pending replies and rejects drafts from a sibling component', async () => {
+  const owner = await connect(await makeToken('pending-component@example.test', 'Pending Component'));
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Pending component', organizationId: 0n, framework: 'Blazor', language: 'C#', styling: 'Bootstrap', libraries: '', versions: '' });
+  const projectId = [...owner.conn.db.visibleProjects.iter()][0].id;
+  await owner.conn.reducers.createComponent({ projectId, name: 'Button', category: 'common' });
+  await owner.conn.reducers.createComponent({ projectId, name: 'Panel', category: 'composition' });
+  const components = [...owner.conn.db.visibleComponents.iter()];
+  const button = components.find(row => row.name === 'Button')!;
+  const panel = components.find(row => row.name === 'Panel')!;
+  const starter = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.componentId === button.id)!;
+  const draft = [...owner.conn.db.visibleComponentDrafts.iter()].find(row => row.jobId === starter.id)!;
+  expect(draft.files.some(file => file.path.endsWith('.razor'))).toBe(true);
+  const invalid = await owner.conn.procedures.generateProjectChat({ projectId, componentId: panel.id, sourceJobId: starter.id, expectedDraftRevision: 0n, requestId: randomUUID(), request: 'Explain the library' }).then(() => '', cause => String(cause));
+  expect(invalid).toContain('Selected draft is unavailable');
+  await owner.conn.procedures.generateProjectChat({ projectId, componentId: button.id, requestId: randomUUID(), request: 'Pending reply fixture' });
+  const pending = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.state === 'generating')!;
+  expect(pending.componentId).toBe(button.id);
+  await owner.conn.reducers.clearComponentChat({ componentId: button.id });
+  expect([...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.id === pending.id)?.state).toBe('cancelled');
+  expect([...owner.conn.db.visibleComponentChat.iter()]).toHaveLength(0);
+  expect([...owner.conn.db.visibleComponentDrafts.iter()].find(row => row.jobId === starter.id)).toEqual(draft);
+});
+
+
+test('accepted chat crosses application credential expiry while new requests still require a valid session', async () => {
+  const token = await makeToken('accepted-chat-expiry@example.test', 'Accepted Chat');
+  const owner = await connect(token);
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Expiry-safe chat', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
+  const projectId = [...owner.conn.db.visibleProjects.iter()][0].id;
+  const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+  const expiry = Math.floor(Date.now() / 1000) + 2;
+  // Local development JWTs are normalized by the test server. The instrumented
+  // module uses this signed fixture claim as its application expiry boundary.
+  const short = await connect(signed({ ...claims, fixture_exp: expiry }));
+  const requestId = randomUUID();
+  await short.conn.procedures.generateProjectChat({ projectId, requestId, request: 'Token expiry fixture' });
+  await expect.poll(() => [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.requestId === requestId)?.diagnostic).toContain('unverified draft');
+  expect(Date.now()).toBeGreaterThanOrEqual(expiry * 1000);
+  const rejected = await short.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Explain the library' }).then(() => '', cause => String(cause));
+  expect(rejected).toContain('session expired');
+  await expect(short.conn.reducers.createComponent({ projectId, name: 'Expired', category: 'common' })).rejects.toThrow('session expired');
+  await owner.conn.procedures.generateProjectChat({ projectId, requestId: randomUUID(), request: 'Truncated draft fixture' });
+  const incomplete = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.request === 'Truncated draft fixture')!;
+  expect(incomplete.state).toBe('draft_ready');
+  expect(JSON.parse(incomplete.artifacts).files).toEqual([]);
+  expect(JSON.parse(incomplete.artifacts).reply).toContain('saved draft is intact');
+});
+
+
+test('renewal follows the actual ID token when the stored OIDC profile says it expires later', async ({ browser }) => {
+  const owner = await connect(await makeToken('raw-expiry@example.test', 'Raw Expiry'));
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Renewed component creation', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
+  const token = owner.token;
+  const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+  const shortToken = signed({ ...claims, exp: Math.floor(Date.now() / 1000) + 60 });
+  const context = await browser.newContext();
+  await seedBrowser(context, shortToken, 'raw-expiry-refresh', Math.floor(Date.now() / 1000) + 3600);
+  // Model a stale/user-info merged profile: its expiry must not override the credential.
+  await context.addInitScript(() => {
+    for (const key of Object.keys(sessionStorage)) if (key.startsWith('oidc.user:')) {
+      const user = JSON.parse(sessionStorage.getItem(key)!);
+      user.profile.exp = Math.floor(Date.now() / 1000) + 3600;
+      sessionStorage.setItem(key, JSON.stringify(user));
+    }
+  });
+  let refreshes = 0;
+  await context.route('https://auth.spacetimedb.com/**', route => {
+    if (route.request().url().includes('.well-known')) return route.fulfill({ json: { issuer: authority, authorization_endpoint: authority + '/authorize', token_endpoint: authority + '/token', jwks_uri: authority + '/jwks' } });
+    if (new URLSearchParams(route.request().postData() ?? '').get('grant_type') !== 'refresh_token') return route.abort();
+    refreshes++;
+    return route.fulfill({ json: { id_token: token, access_token: 'raw-expiry-new-access', refresh_token: 'raw-expiry-rotated', token_type: 'Bearer', expires_in: 3600 } });
+  });
+  const page = await context.newPage(); await page.goto('/');
+  await expect.poll(() => refreshes).toBe(1);
+  await expect(page.getByTestId('profile-email')).toHaveText('raw-expiry@example.test');
+  const stored = await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('oidc.user:')).map(key => JSON.parse(sessionStorage.getItem(key)!)));
+  expect(stored[0].id_token).toBe(token);
+  await openProjectPage(page, 'Renewed component creation');
+  await createBrowserComponent(page, 'RenewedButton');
+  await expect(page.getByRole('heading', { name: 'Chat: RenewedButton', exact: true })).toBeVisible();
+  await context.close();
+});
+
+
+test('saved history does not block live chat and mock history limits do not count component starters', async () => {
+  const owner = await connect(await makeToken('history-cap@example.test', 'History Cap'));
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Long-lived library', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: 'Tailwind CSS', libraries: 'shadcn/ui', versions: '' });
+  const projectId = [...owner.conn.db.visibleProjects.iter()][0].id;
+  for (let i = 0; i < 20; i++) await owner.conn.reducers.createComponent({ projectId, name: 'Item' + i, category: 'common' });
+  const before = [...owner.conn.db.visibleComponentDrafts.iter()];
+  const componentId = [...owner.conn.db.visibleComponents.iter()][0].id;
+  const send = () => owner.conn.procedures.generateProjectChat({ projectId, componentId, requestId: randomUUID(), request: 'Explain the library' });
+  await send();
+  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(21);
+  for (let i = 0; i < 20; i++) {
+    const requestId = randomUUID();
+    await owner.conn.reducers.createGeneration({ projectId, requestId, request: 'Mock history ' + i, scenario: 'success' });
+    const job = [...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.requestId === requestId)!;
+    await owner.conn.reducers.cancelGeneration({ jobId: job.id });
+  }
+  await expect(owner.conn.reducers.createGeneration({ projectId, requestId: randomUUID(), request: 'Mock over limit', scenario: 'success' })).rejects.toThrow('history limit');
+  await send();
+  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(42);
+  expect([...owner.conn.db.visibleComponentDrafts.iter()]).toEqual(before);
+  for (let i = 0; i < 3; i++) await send();
+  await owner.conn.reducers.clearComponentChat({ componentId });
+  const rejected = await send().then(() => '', cause => String(cause));
+  expect(rejected).toContain('Chat limit reached');
+  expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(45);
+  expect([...owner.conn.db.visibleComponentDrafts.iter()]).toEqual(before);
 });

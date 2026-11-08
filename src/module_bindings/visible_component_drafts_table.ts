@@ -23,4 +23,5 @@ export default __t.row({
   },
   updatedBy: __t.identity().name("updated_by"),
   updatedAt: __t.timestamp().name("updated_at"),
+  componentId: __t.u64().name("component_id"),
 });

@@ -14,8 +14,8 @@ export const params = {
   projectId: __t.u64(),
   requestId: __t.string(),
   request: __t.string(),
-  referenceIds: __t.array(__t.u64()),
   sourceJobId: __t.option(__t.u64()),
   expectedDraftRevision: __t.option(__t.u64()),
+  componentId: __t.option(__t.u64()),
 };
 export const returnType = __t.unit()

@@ -282,8 +282,8 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
             saved={data.guidance.find(row => row.projectId === project.id)} connection={connection} />}
           </section>}
           {route.page === 'library' && <section className="route-page" aria-label="Components">
-          {project && connection && <ProjectLibrary key={'library:' + project.id.toString()} projectId={project.id} target={project} draftGuard={draftGuard} editable={project.permission === 'editor'}
-            drafts={data.drafts.filter(row => row.projectId === project.id)} jobs={data.jobs.filter(row => row.projectId === project.id)} references={data.references.filter(row => row.projectId === project.id)} mode={data.generationMode} chatEnabled={data.chatEnabled} connection={connection} />}
+          {project && connection && <ProjectLibrary key={'library:' + project.id.toString()} projectId={project.id} target={project} previewToken={token} draftGuard={draftGuard} editable={project.permission === 'editor'}
+            components={data.components.filter(row => row.projectId === project.id)} messages={data.messages.filter(row => row.projectId === project.id)} drafts={data.drafts.filter(row => row.projectId === project.id)} jobs={data.jobs.filter(row => row.projectId === project.id)} references={data.references.filter(row => row.projectId === project.id)} mode={data.generationMode} chatEnabled={data.chatEnabled} connection={connection} />}
           </section>}
           {route.page === 'references' && <section className="route-page" aria-label="References">
           {project && connection && <ProjectReferences key={'references:' + project.id.toString()} editable={project.permission === 'editor'}

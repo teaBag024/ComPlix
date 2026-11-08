@@ -351,3 +351,56 @@ First increment: editable checkpoints are scoped to one project and one generate
 Confirmed: owner selected Gemini Flash for development because budget is limited. Use operator-configurable GEMINI_MODEL, defaulting to the currently documented stable gemini-3.8-flash, and backend-only GEMINI_API_KEY. Never ask end users for keys. Source now routes chat through Gemini; it can answer directly or request one narrowly scoped Nemotron generation tool. The direct public NVIDIA procedure is removed; historical NVIDIA jobs remain readable/editable. No fallback bypasses a missing Gemini configuration.
 
 Bounded prototype implementation: at most two Gemini calls and one Nemotron call per accepted turn, existing five-turn/minute identity limit, no automatic retries, LOW thinking for Gemini 3, bounded context/output and existing 90-second job deadline. This is not a hard monetary budget. Tools cannot supply project IDs, commands, credentials or validation/promotion claims. Stack support and authorization/source revisions are enforced by the application. Live account/model acceptance, background orchestration, actual builds/previews and validated promotion remain open.
+## E2B preview implementation — November 8, 2026
+
+Confirmed: owner authorized building React and Blazor E2B templates and short live sandbox verification, including credit consumption. The owner requires one stack-independent component display. Both adapters therefore use the shared Code/Docs/Preview workspace and a separate-origin iframe; the adapter chooses the internal toolchain. Standalone Blazor WebAssembly is the initial internal preview host, without constraining a consuming application's render mode.
+
+Implemented prototype direction: an operator-controlled loopback Node preview service reads authorized saved SpacetimeDB drafts, builds in disposable offline E2B instances and serves bounded static artifacts. Builds require an explicit user action; a failed replacement preserves the previous preview. Dependency support is pinned and explicit. This establishes local preview execution, not authoritative validation/promotion or hosted production routing. Setup and limits: [preview-runtime.md](./preview-runtime.md).
+
+
+## Component-scoped conversations - November 8, 2026
+
+Accepted owner specification: stable project-owned components grouped into Common and Compositions, component-specific draft context and chat, URL selection, native creation/clear dialogs, and transcript clearing that preserves files and persistent identity rate counters.
+
+Implementation retains job-based immutable results and revisioned checkpoints, appending defaulted componentId=0 for existing records. Legacy jobs remain available without silently inventing component ownership. Private component/component_chat_message tables expose caller-scoped authorized views. The existing generateProjectChat procedure accepts optional componentId, verifies its project and source-draft ownership, and uses the selected thread's last six messages. Compositions receive project-local Common documentation/declaration contracts, never dependency implementations as editable candidates. Clear deletes only message rows, cancels that component's active request to prevent late replies, and leaves jobs/checkpoints/counters intact. It is a conversation reset, not erasure of historical job snapshots.
+
+Creation seeds documentation and a minimal React or Blazor component when a matching adapter exists; arbitrary stacks receive documentation without substituted code. The optional initial prompt is submitted through the existing authenticated provider procedure after creation succeeds; provider failure retains the created component and is reported separately. Existing one-active-job/project and 20-job prototype history limits remain. Starter records count toward that retained history limit. No automatic migration/assignment of legacy project-level conversations, promotion, or dependency implementation edits is introduced.
+
+Schema changes follow official [automatic migration rules](https://spacetimedb.com/docs/databases/automatic-migrations/) and [caller-scoped view behavior](https://spacetimedb.com/docs/functions/views/); actual tests use the installed 2.14.1 server. Operator credentials and isolated preview execution remain unchanged.
+
+
+## Chat request authentication lifetime - November 8, 2026
+
+Owner reports session-expired errors inside chat while the browser remains signed in. A procedure retains its original RPC JWT even when browser OIDC renewal produces a new token. Routine correction: validate issuer/audience/verified profile/token expiry at job acceptance; subsequent internal checkpoints use that accepted identity and recheck the current user record, project edit grants, cancellation, source fingerprint/revision and existing 90-second deadline. Expiry of the original token alone no longer aborts already accepted work. New requests/reducers still require an unexpired token; grant revocation still prevents provider continuation/result acceptance. No token-expiry check was removed from public entry points.
+
+Browser renewal starts 120 seconds before the earliest token expiry, covering the bounded chat lifetime. Background silent renewal does not itself replace the workspace with a sign-in progress screen. Credentials remain tab-scoped in sessionStorage. Provider failure reporting retains fixed safe NVIDIA parse/truncation errors and identifies Gemini/NVIDIA transport failures without persisting exception text, secrets, provider bodies or retrying.
+
+Reviewed official [SpacetimeAuth ID-token integration](https://spacetimedb.com/docs/core-concepts/authentication/spacetimeauth/) and [OIDC client renewal settings](https://authts.github.io/oidc-client-ts/interfaces/UserManagerSettings.html), plus installed SDK/client implementation. The user's particular historical provider failure cannot be reconstructed from the previously generic diagnostic; no new paid provider request was made.
+
+
+## Actual credential expiry is authoritative for browser renewal - November 8, 2026
+
+Follow-up correction: live local logs locate the reported session-expired failures at create_component, before AI coordination. The preceding in-flight JWT explanation did not establish the cause of these entry-point failures. Browser renewal used profile.exp from OIDC user data, which can differ from the actual encoded ID token after user-info merging or stale session state. Read the ID token exp directly for scheduling, bounded by access-token expiry; invalid or missing expiry fails closed. This is client scheduling only; signature, issuer/audience, profile and authorization checks remain backend responsibilities. No database schema or published module change is required for this follow-up.
+
+
+## Automatic project references in chat - November 8, 2026
+
+Owner decision: every saved reference belonging to the current project is automatically included in Gemini chat context and, when code generation is requested, the same reference snapshot is included for Nemotron. Users do not select references per message. The backend resolves references from the authorized project rather than trusting client-supplied reference IDs.
+
+Retain the existing 64 KiB complete-snapshot limit. If all saved references plus the remaining project/request context do not fit, reject before creating a job or calling a provider, and report a clear remediation. Never silently omit or truncate reference documents. Existing per-file and project reference-count upload limits are unchanged; therefore a project with an oversized set may need its references shortened or removed before chat can proceed. Historical job snapshots remain immutable when source references are later removed.
+
+
+## Gemini owns bounded generation planning - November 8, 2026
+
+Owner correction: users talk to Gemini; Gemini is responsible for the Nemotron implementation brief. Telling end users to reduce a Nemotron request is inappropriate. The prior complete-replacement response requirement made Nemotron repeat unchanged source/docs within 4096 tokens.
+
+Implemented: Gemini plans one focused change with 1-6 exact changed-file paths and a concise implementation brief, knowing the existing total output limit. Broad/ambiguous work is discussed or clarified before calling generation. Nemotron returns complete content only for planned changed files; application code merges these with the saved candidate set, preserving unchanged/manual files and validating the complete result. Unsafe/duplicate plans, writes to supplied Common dependency roots, and missing/unplanned result files are rejected. This tool does not delete files; deletion remains unsupported. Component/project authorization and revision checks remain in application code.
+
+A truncated/incomplete Nemotron response becomes a structured generation_incomplete tool result for Gemini, without partial source or raw provider data. Gemini supplies the user-facing explanation and a focused next step; the current draft is preserved. There is still at most one Nemotron call and two Gemini calls, no automatic Nemotron retry or raised token/time/cost limit. Provider failure explanation is a chat reply with no files, not a successful code change or promotion. Exact live model behavior remains unverified.
+
+Official references: [Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling?hl=en) for required arguments and returning tool results; [NVIDIA model API](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer) for output token bounds and structured responses. No new dependency, schema migration or provider configuration.
+
+
+## Chat history is not a lifetime request quota - November 8, 2026
+
+Correction following the owner-reported history-limit block: the 20-record cap applies only to retained developer mock jobs. Saved real chat, successful/failed provider jobs and starter drafts do not impose a lifetime chat limit and do not consume mock-history slots. All existing rows/checkpoints/transcripts remain intact; no automatic pruning or rate-counter reset is introduced. Five requests per identity per minute, one active job/project, bounded provider calls and the 64 KiB context limit remain enforced. Long-term retention, pagination and storage budgets remain future/open; this local prototype does not claim bounded total historical storage.

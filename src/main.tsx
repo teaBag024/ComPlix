@@ -1,3 +1,4 @@
+import { sessionExpiry } from './sessionExpiry';
 import { createRoot } from 'react-dom/client';
 import { AuthProvider, useAuth } from 'react-oidc-context';
 import { WebStorageStateStore } from 'oidc-client-ts';
@@ -14,7 +15,7 @@ const appOrigin = import.meta.env.VITE_AUTH_REDIRECT_ORIGIN ?? (import.meta.env.
 function App() {
   const auth = useAuth();
   const [expired, setExpired] = useState(false);
-  const expiresAt = Math.min(auth.user?.expires_at ?? Infinity, Number(auth.user?.profile.exp ?? Infinity));
+  const expiresAt = sessionExpiry(auth.user?.id_token, auth.user?.expires_at);
   useEffect(() => {
     if (!auth.user?.id_token || !Number.isFinite(expiresAt)) return;
     let running = false;
@@ -22,7 +23,7 @@ function App() {
     const renew = () => {
       // Spacetime authenticates with the ID token, which can expire before
       // the access token used by the library's default renewal timer.
-      if (running || Date.now() < retryAfter || Date.now() < expiresAt * 1000 - 60000) return;
+      if (running || Date.now() < retryAfter || Date.now() < expiresAt * 1000 - 120000) return;
       running = true;
       retryAfter = Date.now() + 15000;
       void auth.signinSilent().catch(() => {
@@ -45,7 +46,7 @@ function App() {
     const timer = window.setTimeout(() => setExpired(true), Math.max(0, expiresAt * 1000 - Date.now()));
     return () => window.clearTimeout(timer);
   }, [expiresAt, auth.user?.id_token]);
-  if (auth.isLoading || (auth.activeNavigator && auth.activeNavigator !== 'signinSilent')) return <main><p role="status">Completing sign-in…</p></main>;
+  if ((auth.isLoading && auth.activeNavigator !== 'signinSilent') || (auth.activeNavigator && auth.activeNavigator !== 'signinSilent')) return <main><p role="status">Completing sign-in…</p></main>;
   // A renewal error must not discard a still-valid session. Expiry checks below
   // continue to stop access if fresh credentials cannot be obtained.
   if (auth.error && (!auth.isAuthenticated || expired)) return <main><h1>Sign-in could not finish</h1><p role="alert">Please try again. If this continues, check the registered redirect address.</p><button onClick={() => void auth.clearStaleState().then(() => window.location.assign('/'))}>Return to sign in</button></main>;

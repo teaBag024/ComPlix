@@ -1,0 +1,5 @@
+<button class="btn btn-success" @onclick="OnClick">@ChildContent</button>
+@code {
+  [Parameter] public RenderFragment? ChildContent { get; set; }
+  [Parameter] public EventCallback OnClick { get; set; }
+}

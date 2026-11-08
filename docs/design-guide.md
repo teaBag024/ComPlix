@@ -63,3 +63,16 @@ Code, Docs and Preview use a shared interface for all stacks, with multiple sour
 
 
 Chat now uses Gemini for discussion and Nemotron for requested code changes through a bounded tool call. The UI distinguishes coordinating and generating changes; both operate on the selected saved draft. Missing operator configuration leaves chat unavailable and does not expose key inputs. All generated output remains explicitly unverified; executable preview/build support is unchanged.
+
+### Project chat presentation — November 7, 2026
+
+Use a conversation-style layout within the existing right-side workspace pane. Align the member's messages to the right in a theme-token sage surface and ComPlix replies to the left on a softly bordered surface. Keep the connection/status label compact, the empty state quiet, and the message composer anchored below an independently scrolling history. The composer grows with typed text and has a clear send action. Preserve accessible labels and distinct unavailable, working/cancellation, failure, read-only, and unverified-draft states. Do not imply that a generated draft has passed validation.
+
+Give the chat pane enough viewport-relative height for the transcript to remain the main visible area. Keep reference selection bounded and scrollable and keep context text compact; the transcript should take remaining pane height and scroll independently, including when a component scope indicator and clear-chat control are shown.
+
+All saved references in the current project are automatically included in Gemini/Nemotron chat context. Do not present per-message reference selection. Display a compact count/status instead. If the complete authorized project snapshot exceeds 64 KiB, block the send with an actionable message; never silently omit references.
+
+
+### Component creation and conversations - November 8, 2026
+
+The explorer creates persisted Common or Composition components through a native dialog with a name, category and optional first prompt. Selecting one sets ?selected=<componentId>; reload and browser history restore selection. The selected component exposes its draft file tree and existing Code/Docs/Preview controls. Its chat heading identifies the name/category. Clear chat uses native confirmation and preserves draft files; conversation context restarts from saved files and guidance. New empty projects require component creation before chat. Legacy project-level jobs remain inspectable and retain their previous chat compatibility until a component is selected. Provider/build results remain explicitly unverified. Light/dark dialogs use existing theme tokens.

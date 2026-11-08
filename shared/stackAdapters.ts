@@ -1,16 +1,19 @@
 /** Output files are stack-neutral data; never executable configuration for the host. */
 export type WorkspaceFile = { path: string; content: string };
 export type TargetStack = { framework: string; language: string; styling: string; libraries: string; versions: string };
-export type WorkspaceRevision = { projectId: string; revisionId: string; target: TargetStack; files: WorkspaceFile[] };
+export type WorkspaceRevision = { projectId: string; revisionId: string; sourceJobId?: string; draftRevision?: string; target: TargetStack; files: WorkspaceFile[] };
 export type CheckResult = { passed: boolean; diagnostics: string[] };
 export type PreviewSession = {
   /** Protected gateway URL, without sandbox credentials. */
   url: string;
+  versions?: string;
+  expiresAt?: number;
   refresh(revision: WorkspaceRevision): Promise<void>;
   dispose(): Promise<void>;
 };
 /** Implemented by a trusted isolated controller, never by generated code. */
 export interface StackRuntime {
+  cancelBuild?(revision: WorkspaceRevision): void;
   resolveDependencies(adapterId: string, revision: WorkspaceRevision): Promise<CheckResult>;
   compile(adapterId: string, revision: WorkspaceRevision): Promise<CheckResult>;
   validate(adapterId: string, revision: WorkspaceRevision): Promise<CheckResult>;
@@ -45,10 +48,10 @@ function adapter(spec: Pick<StackAdapter, 'id' | 'label' | 'conventions' | 'gene
       const controller = requireRuntime(revision, runtime);
       for (const phase of ['resolveDependencies', 'compile', 'validate'] as const) {
         const result = await controller[phase](spec.id, revision);
-        if (!result.passed) throw new Error(`${spec.label}: ${phase} failed. Preview was not started.`);
+        if (!result.passed) throw new Error(`${spec.label}: ${phase} failed. ${result.diagnostics.join('\n').slice(0, 6000)}`);
       }
       const session = await controller.startPreview(spec.id, revision);
-      return { url: session.url,
+      return { get url() { return session.url; }, get versions() { return session.versions; }, get expiresAt() { return session.expiresAt; },
         refresh: async next => {
           requireRuntime(next, runtime);
           if (next.projectId !== revision.projectId) throw new Error('Preview cannot switch projects.');
@@ -69,13 +72,13 @@ export const reactAdapter = adapter({
   id: 'react-tailwind-shadcn', label: 'React + TypeScript + Tailwind + shadcn/ui',
   matches: target => exact(target.framework, ['react']) && exact(target.language, ['typescript']) && exact(target.styling, ['tailwind', 'tailwind css']) && exact(target.libraries, ['shadcn/ui']),
   conventions: 'Use .tsx components, shared .ts utilities, CSS styles, package.json dependency declarations, Markdown documentation and separate .tsx examples. Keep Common reusable.',
-  generationInstructions: 'Generate React TypeScript components using Tailwind and shadcn/ui. Declare imports and package dependencies explicitly. Include public API documentation and usage examples. Respect requested versions; do not claim browser compilation or runtime verification.',
+  generationInstructions: 'Generate React TypeScript components using Tailwind and shadcn/ui. Declare imports and package dependencies explicitly. Include public API documentation and usage examples. Include examples/Preview.tsx with a default-exported interactive example requiring no props. It may import reusable Common implementations; it is a demo host entry, not a complete application. The initial preview environment provides React 19.3.1, TypeScript 7.0.2, Tailwind 4.3.5 and Radix Slot, CVA, clsx, tailwind-merge and lucide-react; other dependencies need a separately verified environment. Respect requested versions; do not claim build/runtime verification.',
 });
 export const blazorAdapter = adapter({
   id: 'blazor-bootstrap', label: 'Blazor + Bootstrap',
   matches: target => exact(target.framework, ['blazor']) && exact(target.language, ['c#', 'csharp']) && exact(target.styling, ['bootstrap']) && !target.libraries.trim(),
   conventions: 'Use .razor components, optional .razor.cs code-behind and .razor.css styles, a Razor class-library .csproj, Markdown/API documentation and separate .razor examples. Keep Common reusable.',
-  generationInstructions: 'Generate Blazor components using Bootstrap. Declare NuGet dependencies in the project file. Document parameters and EventCallbacks and supply Razor examples. Do not substitute JSX or React. Do not choose an unspecified render mode or .NET version silently. Compilation requires a compatible isolated .NET runtime.',
+  generationInstructions: 'Generate Blazor components using Bootstrap. Declare NuGet dependencies in the project file. Document parameters and EventCallbacks. Include Examples/Preview.razor with @namespace ComPlixPreview.Library.Examples as the interactive example entry, importing reusable Common components. The preview-only host is .NET 10.0 / WebAssembly with Bootstrap 5.3.8; that does not change the requested consuming application render mode. Do not substitute JSX or React or silently change a requested .NET version. Other NuGet dependencies need a separately verified environment.',
 });
 export const stackAdapters: readonly StackAdapter[] = [reactAdapter, blazorAdapter];
 export function selectStackAdapter(target: TargetStack, registry = stackAdapters): StackAdapter | undefined {

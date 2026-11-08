@@ -25,4 +25,5 @@ export default __t.row({
   diagnostic: __t.string(),
   createdAt: __t.timestamp().name("created_at"),
   model: __t.string(),
+  componentId: __t.u64().name("component_id"),
 });

@@ -37,6 +37,8 @@ import {
 import AcceptInvitationReducer from "./accept_invitation_reducer";
 import AdvanceMockGenerationReducer from "./advance_mock_generation_reducer";
 import CancelGenerationReducer from "./cancel_generation_reducer";
+import ClearComponentChatReducer from "./clear_component_chat_reducer";
+import CreateComponentReducer from "./create_component_reducer";
 import CreateGenerationReducer from "./create_generation_reducer";
 import CreateOrganizationReducer from "./create_organization_reducer";
 import CreateProjectReducer from "./create_project_reducer";
@@ -72,7 +74,9 @@ import MyOrganizationsRow from "./my_organizations_table";
 import MyProfileRow from "./my_profile_table";
 import MyProjectRow from "./my_project_table";
 import OrganizationMembersRow from "./organization_members_table";
+import VisibleComponentChatRow from "./visible_component_chat_table";
 import VisibleComponentDraftsRow from "./visible_component_drafts_table";
+import VisibleComponentsRow from "./visible_components_table";
 import VisibleGenerationJobsRow from "./visible_generation_jobs_table";
 import VisibleGuidanceRow from "./visible_guidance_table";
 import VisibleProjectsRow from "./visible_projects_table";
@@ -131,6 +135,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, OrganizationMembersRow),
+  visibleComponentChat: __table({
+    name: 'visible_component_chat',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleComponentChatRow),
   visibleComponentDrafts: __table({
     name: 'visible_component_drafts',
     indexes: [
@@ -138,6 +149,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleComponentDraftsRow),
+  visibleComponents: __table({
+    name: 'visible_components',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleComponentsRow),
   visibleGenerationJobs: __table({
     name: 'visible_generation_jobs',
     indexes: [
@@ -173,6 +191,8 @@ const reducersSchema = __reducers(
   __reducerSchema("accept_invitation", AcceptInvitationReducer),
   __reducerSchema("advance_mock_generation", AdvanceMockGenerationReducer),
   __reducerSchema("cancel_generation", CancelGenerationReducer),
+  __reducerSchema("clear_component_chat", ClearComponentChatReducer),
+  __reducerSchema("create_component", CreateComponentReducer),
   __reducerSchema("create_generation", CreateGenerationReducer),
   __reducerSchema("create_organization", CreateOrganizationReducer),
   __reducerSchema("create_project", CreateProjectReducer),
