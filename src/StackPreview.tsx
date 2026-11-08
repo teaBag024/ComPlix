@@ -1,4 +1,4 @@
-import { Button } from './components/Button';
+import { Button } from './components/Common/Button';
 import { useEffect, useRef, useState } from 'react';
 import type { StackAdapter } from '../shared/stackAdapters';
 import type { ComponentPreview } from './useWorkspace';
@@ -84,7 +84,7 @@ export function StackPreview({ adapter, connection, jobId, savedRevision, unsave
   return <div className="actual-preview">
     <div className="preview-toolbar">
       <span role="status">{awaitingSession && !requesting ? 'Renewing your sign-in, then retrying the preview…' : building ? label : agent?.status === 'failed' ? 'Last build failed — showing the previous successful render.' : preview && !expired ? `Preview of saved revision ${agent?.built || preview.revision.toString()}.` : editable ? 'Preview starts automatically.' : 'No live preview. An editor must open Preview to start one.'}</span>
-      {editable && <Button type="button" variant="secondary" disabled={requesting || unsaved} onClick={() => { failed.current = { key: '' }; void build(savedRevision); }}>Rebuild</Button>}
+      {editable && <Button type="button" variant="secondary" size="sm" disabled={requesting || unsaved} onClick={() => { failed.current = { key: '' }; void build(savedRevision); }}>Rebuild</Button>}
     </div>
     {error && <div role="alert"><p>Preview build failed. The saved draft is unchanged.</p><pre>{error}</pre></div>}
     {agent?.status === 'failed' && agent.log && <div role="alert"><p>Build errors</p><pre>{agent.log}</pre></div>}

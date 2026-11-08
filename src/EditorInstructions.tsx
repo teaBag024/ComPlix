@@ -3,7 +3,7 @@ import { detectEditorInstructions, INSTRUCTION_IDLE_MS } from '../shared/editorI
 import type { WorkspaceFile } from '../shared/stackAdapters';
 import type { DbConnection } from './module_bindings';
 import type { GenerationJob, SavedEditorInstruction } from './useWorkspace';
-import { Button } from './components/Button';
+import { Button } from './components/Common/Button';
 
 export function EditorInstructions({ componentId, sourceJobId, revision, files, unsaved, saveError, editable, available, busy, connection, instructions, jobs, onResult }: {
   componentId: bigint; sourceJobId: bigint; revision: bigint; files: WorkspaceFile[]; unsaved: boolean; saveError: string;
@@ -67,8 +67,8 @@ export function EditorInstructions({ componentId, sourceJobId, revision, files, 
         <span className="chat-speaker">You · from your comment in {marker.path.split('/').pop()}:{marker.line}</span>
         <div className="chat-instruction-bubble">{marker.text}</div>
         <span className="chat-instruction-status" role="status">{!editable ? 'Read-only.' : status}</span>
-        {editable && state !== 'pending' && <Button type="button" variant="secondary" disabled={unsaved || !!saveError || busy || sending || !available} onClick={() => void enable(marker.key)}>{state === 'blocked' ? 'Retry instruction' : 'Run again / enable'}</Button>}
-        {editable && state === 'pending' && record && <Button type="button" variant="secondary" onClick={() => { void connection.reducers.dismissEditorInstruction({ instructionId: record.id }).catch(() => setError('Stopping this pending instruction could not be confirmed.')); }}>Dismiss instruction</Button>}
+        {editable && state !== 'pending' && <Button type="button" variant="secondary" size="sm" disabled={unsaved || !!saveError || busy || sending || !available} onClick={() => void enable(marker.key)}>{state === 'blocked' ? 'Retry instruction' : 'Run again / enable'}</Button>}
+        {editable && state === "pending" && record && <Button type="button" variant="secondary" size="sm" onClick={() => { void connection.reducers.dismissEditorInstruction({ instructionId: record.id }).catch(() => setError('Stopping this pending instruction could not be confirmed.')); }}>Dismiss instruction</Button>}
       </li>;
     })}</ul>
     {/* A running instruction is stopped with "Cancel reply" on the chat's typing bubble. */}

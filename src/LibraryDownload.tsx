@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { LibraryExportSnapshot } from '../shared/libraryExport';
 import type { DbConnection } from './module_bindings';
-import { Button } from './components/Button';
-import { Modal } from './components/Modal';
+import { Button } from './components/Common/Button';
+import { Modal } from './components/Compositions/Modal';
 
 export function LibraryDownload({ projectId, connection, flush }: { projectId: bigint; connection: DbConnection; flush: () => Promise<unknown> }) {
   const [open, setOpen] = useState(false);

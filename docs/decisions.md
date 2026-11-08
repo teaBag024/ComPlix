@@ -553,3 +553,24 @@ Owner requested implementation instructions for optional existing-component uplo
 - **Limits:** 1 MiB upload chunks, 96 MiB payload cap (64 MiB of content plus base64), 200 components per import, staging expires after 24 hours, one in-flight import per uploader and project.
 - **Ordinary ZIPs:** build, dependency and tool folders, credential-like files, lockfiles, binaries and unsupported types are excluded with visible reasons. Grouping and category are suggestions; the user's mapping decides. Cross-component relative imports are reported, never rewritten.
 - **Conflicts:** archived references cannot yet be renamed in the UI, so clashes are resolved by removing the intake upload.
+
+## Uplift components, Tailwind and the B&W style guide - November 8, 2026
+
+**Owner decisions:**
+
+- **Components:** adopt the "uplift" component export (a ComPlix-generated draft of the app's own components) as the shared frontend components.
+- **Styling:** add Tailwind CSS v4 to the builder frontend. This supersedes the November 7 choice of local CSS without a Tailwind pipeline.
+- **Visual authority:** restyle the whole app to the uplift B&W Box + Multi-Pastel style guide. This supersedes docs/frontend-design-guide.html (sage/forest) as the visual authority.
+
+**Implementation choices (working defaults):**
+
+- **Tree:** `src/components/Common/` (Button, Badge, Tabs) and `src/components/Compositions/` (Modal, ChatMessage, ProjectCard, CodeEditor). Compositions reuse Common primitives, matching the Common-first rule ComPlix applies to generated libraries. These remain application components, separate from generated project libraries.
+- **CSS layers:** Tailwind's theme and utilities are imported without preflight. App rules sit in `@layer base` below utilities, so component utilities win without rewriting existing markup.
+- **Theme:** `dark:` follows `data-theme`. Semantic token utilities (`bg-canvas`, `text-ink`, …) map to the style-guide CSS variables.
+- **Variants added:** Button `nav` and `link` cover navigation tabs and list links, which used to be styled by context CSS.
+- **Fixes during integration:** described in src/components/README.md.
+- **Archive:** the export stays untouched in `src/components/uplift-*`. It is excluded from TypeScript and Tailwind scanning.
+- **Dev server:** Vite no longer watches `.local` and `.tools` (gigabytes of local data and browsers). Watching them delayed the first CSS request by about 40 s on Windows.
+- **Fonts:** Inter and JetBrains Mono load from Google Fonts in index.html, as the style guide does. This is a new third-party request from the app.
+
+Open: whether to delete the uplift archive after review; whether the HTML guide (docs/frontend-design-guide.html) should be replaced or marked historical.

@@ -1,6 +1,7 @@
-import { Button } from './components/Button';
+import { Button } from './components/Common/Button';
 import { LibraryDownload } from './LibraryDownload';
-import { CodeEditor, AGENT_HIGHLIGHT_MS } from './components/CodeEditor';
+import { CodeEditor, AGENT_HIGHLIGHT_MS } from './components/Compositions/CodeEditor';
+import { Modal } from './components/Compositions/Modal';
 import { EditorInstructions } from './EditorInstructions';
 import { isChatMode, isSourceDraft } from '../shared/generationWorkflow';
 import { useDraftEditor } from './useDraftEditor';
@@ -28,7 +29,7 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
   const [selectedComponentId, setSelectedComponentId] = useState(() => new URLSearchParams(location.search).get('selected') ?? '');
   const component = components.find(row => row.id.toString() === selectedComponentId);
   const jobs = allJobs.filter(row => row.componentId === (component?.id ?? 0n));
-  const creation = useRef<HTMLDialogElement>(null);
+  const [creationOpen, setCreationOpen] = useState(false);
   const [name, setName] = useState('');
   const [category, setCategory] = useState('common');
   const [initialPrompt, setInitialPrompt] = useState('');
@@ -123,46 +124,46 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
   return <section className="component-library">
     <LibraryDownload projectId={projectId} connection={connection} flush={() => editor.flush()} />
     <p role="status">{adapter ? `${adapter.label}: saved drafts preview automatically in an isolated E2B sandbox.` : 'Unsupported target stack: no matching adapter. Code and Docs remain available; compilation and preview are unavailable.'}</p>
-    <dialog ref={creation} aria-labelledby="create-component-title"><form onSubmit={event => {
+    <Modal open={creationOpen} title="New component" onClose={() => { if (!creating) setCreationOpen(false); }}><form onSubmit={event => {
       event.preventDefault(); setCreating(true); setCreationError('');
       void (async () => {
         await connection.reducers.createComponent({ projectId, name, category });
         const created = [...connection.db.visibleComponents.iter()].find(row => row.projectId === projectId && row.name.toLowerCase() === name.trim().toLowerCase());
         if (!created) throw new Error('Creation could not be confirmed.');
-        selectComponent(created.id.toString()); creation.current?.close(); setName(''); setInitialPrompt('');
+        selectComponent(created.id.toString()); setCreationOpen(false); setName(''); setInitialPrompt('');
         if (initialPrompt.trim()) { const requestId = crypto.randomUUID(); await connection.procedures.generateProjectChat({ projectId, componentId: created.id, requestId, request: initialPrompt }); const result = [...connection.db.visibleGenerationJobs.iter()].find(row => row.requestId === requestId); if (result?.state === 'draft_ready' && hasFiles(result)) setSelectedJob(result.id.toString()); }
       })().catch(cause => setCreationError(cause instanceof Error ? cause.message : 'Component creation failed.')).finally(() => setCreating(false));
-    }}><h3 id="create-component-title">New component</h3><label>Component name<input required maxLength={80} pattern="[A-Za-z0-9_-]+" value={name} onChange={event => setName(event.target.value)} /></label><fieldset><legend>Category</legend>{['common', 'composition'].map(value => <label key={value}><input type="radio" name="category" value={value} checked={category === value} onChange={() => setCategory(value)} />{value === 'common' ? 'Common' : 'Composition'}</label>)}</fieldset><label>Initial prompt (optional)<textarea maxLength={4000} value={initialPrompt} onChange={event => setInitialPrompt(event.target.value)} /></label>{creationError && <p role="alert">{creationError}</p>}<Button disabled={creating}>Create component</Button><Button disabled={creating} type="button" onClick={() => creation.current?.close()}>Cancel</Button></form></dialog>
-    {creationError && !creation.current?.open && <p role="alert">Component created; initial chat failed. {creationError}</p>}
+    }}><label>Component name<input required maxLength={80} pattern="[A-Za-z0-9_-]+" value={name} onChange={event => setName(event.target.value)} /></label><fieldset><legend>Category</legend>{['common', 'composition'].map(value => <label key={value}><input type="radio" name="category" value={value} checked={category === value} onChange={() => setCategory(value)} />{value === 'common' ? 'Common' : 'Composition'}</label>)}</fieldset><label>Initial prompt (optional)<textarea maxLength={4000} value={initialPrompt} onChange={event => setInitialPrompt(event.target.value)} /></label>{creationError && <p role="alert" className="error">{creationError}</p>}<div className="modal-actions"><Button disabled={creating} type="button" variant="secondary" onClick={() => setCreationOpen(false)}>Cancel</Button><Button disabled={creating}>Create component</Button></div></form></Modal>
+    {creationError && !creationOpen && <p role="alert">Component created; initial chat failed. {creationError}</p>}
     {error && <p role="alert">{error}</p>}
     {selectedJobDeleted && <p role="alert">This draft was deleted in another session. Local text is retained here; copy any changes before discarding edits or leaving.</p>}
     <div className={'studio-columns' + (componentListOpen ? '' : ' list-hidden')}>
-        {componentListOpen && <aside className="component-list" aria-label="Available components"><div className="component-list-heading"><h3>Components</h3>{editable && <Button disabled={editor.unsaved} type="button" onClick={() => creation.current?.showModal()}>+ New Component</Button>}
-          <Button type="button" variant="secondary" aria-expanded="true" onClick={() => setComponentListOpen(false)}>Hide list</Button></div>
+        {componentListOpen && <aside className="component-list" aria-label="Available components"><div className="component-list-heading"><h3>Components</h3>{editable && <Button disabled={editor.unsaved} type="button" size="sm" onClick={() => setCreationOpen(true)}>+ New Component</Button>}
+          <Button type="button" variant="secondary" size="sm" aria-expanded="true" onClick={() => setComponentListOpen(false)}>Hide list</Button></div>
           {['Common foundation', 'Compositions'].map(group => <section className="component-group" key={group}>
-            <div className="eyebrow">{group}</div><ul>{components.filter(row => row.category === (group === 'Common foundation' ? 'common' : 'composition')).map(row => <li key={row.id.toString()}><Button type="button" className="component-link" disabled={editor.unsaved || chatPending} aria-pressed={component?.id === row.id} onClick={() => selectComponent(row.id.toString())}>{row.name}</Button><span>{row.rootPath}</span>{component?.id === row.id && <ul>{files.map(item => <li key={item.path}><Button className="component-link" type="button" onClick={() => { setSelectedFile(item.path); setView(/\.(md|mdx|xml)$/i.test(item.path) ? 'documentation' : 'source'); }}>{item.path}</Button></li>)}</ul>}</li>)}{!component && examples.filter(item => item.group === group).map(item => <li key={item.id}>
-              <Button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={selectedExample === item.id} onClick={() => {
+            <div className="eyebrow">{group}</div><ul>{components.filter(row => row.category === (group === 'Common foundation' ? 'common' : 'composition')).map(row => <li key={row.id.toString()}><Button type="button" variant="link" size="sm" className="component-link" disabled={editor.unsaved || chatPending} aria-pressed={component?.id === row.id} onClick={() => selectComponent(row.id.toString())}>{row.name}</Button><span>{row.rootPath}</span>{component?.id === row.id && <ul>{files.map(item => <li key={item.path}><Button variant="link" size="sm" className="component-link font-mono" type="button" onClick={() => { setSelectedFile(item.path); setView(/\.(md|mdx|xml)$/i.test(item.path) ? 'documentation' : 'source'); }}>{item.path}</Button></li>)}</ul>}</li>)}{!component && examples.filter(item => item.group === group).map(item => <li key={item.id}>
+              <Button type="button" variant="link" size="sm" className="component-link" disabled={editor.unsaved} aria-pressed={selectedExample === item.id} onClick={() => {
                 setSelectedExample(item.id); setSelectedJob(''); setSelectedFile(''); setView('source');
               }}>{item.name}</Button><span>UI example · not in library</span>
             </li>)}</ul>
           </section>)}
           {candidates.length > 0 && <section className="component-group candidate-group"><div className="eyebrow">Draft candidates</div>
           <ul>{candidates.map(candidate => <li key={candidate.id.toString()}>
-            <Button type="button" className="component-link" disabled={editor.unsaved} aria-pressed={candidate.id === job?.id} onClick={() => { setSelectedExample(''); setSelectedJob(candidate.id.toString()); setView('preview'); }}>
+            <Button type="button" variant="link" size="sm" className="component-link" disabled={editor.unsaved} aria-pressed={candidate.id === job?.id} onClick={() => { setSelectedExample(''); setSelectedJob(candidate.id.toString()); setView('preview'); }}>
               {candidate.request}
             </Button><span>{candidate.mode === 'imported' ? 'Imported · unverified' : candidate.componentId && !candidate.model ? 'Starter draft - unverified' : candidate.mode === 'gemini' ? 'Gemini + Nemotron draft · unverified' : isChatMode(candidate.mode) ? 'NVIDIA draft · unverified' : 'Mock candidate'}</span>
           </li>)}</ul></section>}
         </aside>}
         <section className="studio-preview-pane" aria-label="Component preview and code">
-          {!componentListOpen && <Button type="button" className="secondary show-component-list" aria-expanded="false" onClick={() => setComponentListOpen(true)}>Show component list</Button>}
-          <div className="library-views" aria-label="Candidate inspection">{['preview', 'source', 'documentation', 'validation'].map(item => <Button type="button" variant="secondary" key={item} aria-pressed={view === item} onClick={() => setView(item)}>{{ source: 'Code', documentation: 'Docs', preview: 'Preview', validation: 'Validation' }[item]}</Button>)}</div>
+          {!componentListOpen && <Button type="button" variant="secondary" size="sm" className="show-component-list" aria-expanded="false" onClick={() => setComponentListOpen(true)}>Show component list</Button>}
+          <div className="library-views" aria-label="Candidate inspection">{['preview', 'source', 'documentation', 'validation'].map(item => <Button type="button" variant="nav" size="sm" key={item} aria-pressed={view === item} onClick={() => setView(item)}>{{ source: 'Code', documentation: 'Docs', preview: 'Preview', validation: 'Validation' }[item]}</Button>)}</div>
           {view === 'preview' && (job && preview && job.state === 'preview_ready'
             ? <iframe title="Mock component preview" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={preview.content} />
             : example ? <><p className="example-disclaimer">Illustrative UI example — not generated or saved to this library.</p><iframe title={'Example preview: ' + example.name} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={example.source} /></>
               : !job ? <div className="library-empty-state"><span className="eyebrow">Current library</span><strong>No published components yet</strong><p>Select a saved draft to build and inspect its actual compiled output.</p></div> : null)}
           {!example && !preview && <div hidden={view !== 'preview'}><StackPreview key={job?.id.toString() ?? 'empty'} adapter={adapter} connection={connection} jobId={job && isSourceDraft(job.mode) && job.state === 'draft_ready' && files.length ? job.id : undefined} savedRevision={editor.revision} unsaved={editor.unsaved} preview={previews.find(row => row.jobId === job?.id)} editable={editable && !selectedJobDeleted} active={view === 'preview'} /></div>}
           {view === 'source' && <>{files.length ? <><label>Candidate file<select aria-label="Candidate file" value={file?.path ?? ''} onChange={event => setSelectedFile(event.target.value)}>{files.map(item => <option key={item.path}>{item.path}</option>)}</select></label><p role="status" data-testid="draft-save-status">{editor.status}</p>
-              <CodeEditor key={`${job?.id}:${file?.path}`} value={file?.content ?? ''} readOnly={!canEdit} onChange={value => file && editor.change(file.path, value)}
+              <CodeEditor key={`${job?.id}:${file?.path}`} filename={file?.path} value={file?.content ?? ''} readOnly={!canEdit} onChange={value => file && editor.change(file.path, value)}
                 highlightUntil={job ? recentAgentResults[job.id.toString()] : undefined}
                 generated={(() => { try { return JSON.parse(job?.artifacts || '{}').files?.find((item: { path: string }) => item.path === file?.path)?.content ?? ''; } catch { return ''; } })()}
                 before={(() => { try { return JSON.parse(job?.snapshot || '{}').candidateFiles?.find((item: { path: string }) => item.path.toLowerCase() === file?.path.toLowerCase())?.content ?? ''; } catch { return ''; } })()} />
@@ -234,7 +235,7 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
           <p role="status" data-testid="generation-status">{isChatMode(job.mode) && job.state === 'generating' ? 'ComPlix is thinking' : isChatMode(job.mode) && job.state === 'draft_ready' && !files.length ? 'ComPlix replied' : stages[job.state] ?? job.state} · {job.componentId && !job.model ? 'Starter / unverified draft' : isChatMode(job.mode) ? job.mode === 'gemini' ? 'Gemini + Nemotron / unverified draft' : 'NVIDIA / unverified draft' : 'Mock / unverified candidate'}</p>
           {job.diagnostic && <p role={job.state === 'failed' ? 'alert' : undefined}>{job.diagnostic}</p>}
           {editable && active(job) && <>{job.mode === 'mock' && <Button disabled={busy || mode !== 'mock' || job.mode !== 'mock'} onClick={() => void run(job)}>{job.state === 'queued' ? 'Run mock pipeline' : 'Resume mock pipeline'}</Button>}<Button variant="secondary" onClick={() => void connection.reducers.cancelGeneration({ jobId: job.id }).catch(fail)}>Cancel job</Button></>}
-          {editable && !active(job) && <><Button disabled={editor.unsaved} variant="secondary" onClick={() => setDeleting(true)}>Delete job history</Button>{deleting && <><p>Delete this job's conversation turn, stored context and candidate files? This cannot be undone.</p><Button onClick={() => void connection.reducers.removeGeneration({ jobId: job.id }).then(() => setDeleting(false)).catch(fail)}>Confirm job deletion</Button></>}</>}
+          {editable && !active(job) && <><Button disabled={editor.unsaved} variant="secondary" onClick={() => setDeleting(true)}>Delete job history</Button>{deleting && <><p>Delete this job's conversation turn, stored context and candidate files? This cannot be undone.</p><Button variant="danger" onClick={() => void connection.reducers.removeGeneration({ jobId: job.id }).then(() => setDeleting(false)).catch(fail)}>Confirm job deletion</Button></>}</>}
         </>}
       </details>
   </section>;

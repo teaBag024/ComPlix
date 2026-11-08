@@ -1,7 +1,7 @@
 import * as React from 'react';
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 
-// shadcn/ui Tabs composition, styled with the application's CSS tokens.
+// shadcn/ui Tabs composition, styled with the application's CSS tokens (.tabs-* rules in style.css).
 export const Tabs = TabsPrimitive.Root;
 export function TabsList({ className = '', ...props }: React.ComponentProps<typeof TabsPrimitive.List>) {
   return <TabsPrimitive.List data-slot="tabs-list" className={`tabs-list ${className}`} {...props} />;

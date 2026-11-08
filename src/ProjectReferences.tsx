@@ -1,4 +1,4 @@
-import { Button } from './components/Button';
+import { Button } from './components/Common/Button';
 import { useState, useRef, type FormEvent } from 'react';
 import { MAX_PROJECT_REFERENCES, MAX_REFERENCE_BYTES, MAX_PDF_BYTES, referenceExtensions, referencePurposes, referenceFailure, validateReferenceFile, validatePdfReference } from '../shared/referenceFiles';
 import { extractPdfText } from './pdfText';
@@ -63,7 +63,7 @@ export function ProjectReferences({ editable, references, upload, uploadPdf, rem
       <div><strong>{row.filename}</strong><p className="note">{referencePurposes[row.purpose as keyof typeof referencePurposes] ?? row.purpose} · {row.byteLength} bytes · {isPdf(row.filename) ? 'Ready (text extracted from PDF)' : 'Ready (UTF-8 text)'}</p></div>
       <Button type="button" variant="secondary" onClick={() => setSelected(row.id.toString())}>Preview {row.filename}</Button>
       {editable && <Button type="button" variant="secondary" disabled={busy} onClick={() => setRemoving(row.id.toString())}>Remove {row.filename}</Button>}
-      {editable && removing === row.id.toString() && <div><p>Remove this reference and its stored original? This cannot be undone.</p><Button disabled={busy} onClick={() => {
+      {editable && removing === row.id.toString() && <div><p>Remove this reference and its stored original? This cannot be undone.</p><Button variant="danger" disabled={busy} onClick={() => {
         setBusy(true); setError(''); setNotice('');
         void remove(row.id).then(() => { setRemoving(''); setNotice('Reference removed.'); }).catch(cause => setError(referenceFailure(cause))).finally(() => setBusy(false));
       }}>Confirm removal of {row.filename}</Button><Button variant="secondary" disabled={busy} onClick={() => setRemoving('')}>Keep reference</Button></div>}

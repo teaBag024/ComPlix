@@ -3,8 +3,8 @@ import type { DbConnection } from './module_bindings';
 import type { ProjectSummary } from './module_bindings/types';
 import type { Component, Guidance, ImportRecord, ProjectReference, StarterTask } from './useWorkspace';
 import { ComponentImport } from './ComponentImport';
-import { Button } from './components/Button';
-import { Badge } from './components/Badge';
+import { Button } from './components/Common/Button';
+import { Badge } from './components/Common/Badge';
 import { ProjectReferences } from './ProjectReferences';
 import { selectStackAdapter } from '../shared/stackAdapters';
 import { starterComponents } from '../shared/starterComponents';
@@ -43,7 +43,7 @@ export function ProjectSetup({ project, step, go, openLibrary, guidance, referen
     <ol className="setup-steps">{steps.map(([id, label], index) => {
       const reachable = !generating && (id === 'questionnaire' || id === 'references' || (id === 'components' && canContinue));
       return <li key={id} aria-current={current === id ? 'step' : undefined}>
-        <button type="button" disabled={!reachable || current === id} onClick={() => go(id)}><span className="setup-step-number">{index + 1}</span>{label}</button>
+        <Button type="button" variant="nav" size="sm" className={current === id ? "border-strong bg-tab-active font-semibold text-ink disabled:opacity-100" : undefined} disabled={!reachable || current === id} onClick={() => go(id)}><span className="setup-step-number">{index + 1}</span>{label}</Button>
       </li>;
     })}</ol>
     {current === 'questionnaire' && <QuestionnaireStep key={guidance?.revision.toString() ?? '0'} project={project} guidance={guidance} connection={connection} next={() => go('references')} />}
@@ -191,7 +191,7 @@ function ProgressStep({ project, tasks, components, connection, openLibrary }: {
       return <li key={task.id.toString()} data-state={task.state} aria-label={name + ': ' + (stateLabels[task.state] ?? task.state)}>
         <span className="starter-indicator" aria-hidden="true" />
         <span className="starter-task-name"><strong>{name}</strong>{task.message && <span className="note">{task.message}</span>}</span>
-        <Badge>{stateLabels[task.state] ?? task.state}</Badge>
+        <Badge variant={task.state === "done" ? "mint" : task.state === "failed" ? "rose" : task.state === "generating" ? "sky" : "mono"} withDot>{stateLabels[task.state] ?? task.state}</Badge>
         {task.state === 'failed' && <Button type="button" variant="secondary" onClick={() => { setError(''); void connection.reducers.retryStarterTask({ taskId: task.id }).catch(cause => setError(message(cause))); }}>Retry {name}</Button>}
       </li>;
     })}</ul>

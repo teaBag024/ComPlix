@@ -827,3 +827,36 @@ Checks run:
 - Real server: both browser intake tests passed (ComPlix review and source mapping), and both backend import tests passed.
 
 Not done or verified: renaming archived references in the UI, folder upload, dependency-aware preview of imported cross-component code, and the full foundation suite.
+
+## Uplift components and B&W restyle - November 8, 2026
+
+Branch `feat/uplift-components` (from `feat/component-zip-import`; the existing uncommitted chat-context work was carried over untouched). The owner's uplift export in src/components was integrated, and the app restyled to its style guide.
+
+- **Dependencies:** tailwindcss and @tailwindcss/vite 4.3.5 (dev); class-variance-authority, clsx, tailwind-merge, @radix-ui/react-slot. New vite.config.ts; the Tailwind plugin was also added to tests/vite.test.config.mjs.
+- **Components:**
+  - Button, Badge and Tabs moved to Common/. Modal, ChatMessage, ProjectCard and CodeEditor moved to Compositions/.
+  - Each has an `index.ts`, a README and a typechecked example.
+  - The old flat files and `ui/tabs.tsx` were removed. `src/lib/utils.ts` provides `cn`.
+- **Export issues fixed:**
+  - ProjectCard used the wrong `ProjectSummary` type and `role="presentation"`.
+  - CodeEditor had a broken diff routine, a gutter that didn't scroll with the text, and never applied the highlight class.
+  - The rainbow Button had no gradient.
+  - ChatMessage never right-aligned user messages.
+  - Modal used a span title, and a `flex` utility would have shown it while closed.
+- **Pages:** all feature modules use the new imports and variants:
+  - nav tabs, the project list toggle and setup steps use `nav`;
+  - component and organization project lists use `link`;
+  - the destructive confirms use `danger`;
+  - Create project uses `rainbow`;
+  - status badges have semantic colors.
+- **Dialogs:** the hand-rolled new-component and clear-chat `<dialog>`s now use Modal.
+- **style.css:** style-guide light/dark tokens, 2px box radii, hard-offset focus and hover shadows, mono accents, guide-style section headings, chat and editor rows aligned with the components. Legacy rules that fought the components were removed.
+
+Checks run:
+- `npm run typecheck` and `npm run build` passed.
+- The built CSS was inspected: the layers, `data-theme` dark variant, `open:flex`, `aria-*` variants and token utilities are present.
+- Root cause of the first browser test timing out on navigation: Vite was watching `.local` (4.1 GB) and `.tools` (1.1 GB). With those unwatched, the first CSS request dropped from 43 s to 0.05 s. Without the fix, it reproduced even with no Tailwind plugin.
+- `npx playwright test tests/foundation.spec.ts`: 60/60 passed (5.4 min) on a real local backend. One assertion was updated: the dark `--bg-canvas` value is now the style guide's `#121214`.
+- The agent-highlight screenshot confirms the fading highlight sits on the changed line.
+
+Not verified: a hands-on visual review of every page in light and dark mode, and the other spec files (unit/E2B/NVIDIA). The developer's running `npm run dev` must be restarted to load the Tailwind plugin and the watcher change. Nothing was committed.

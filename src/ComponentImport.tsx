@@ -2,8 +2,8 @@ import { useRef, useState } from 'react';
 import type { DbConnection } from './module_bindings';
 import type { ProjectSummary } from './module_bindings/types';
 import type { Component, ImportRecord, ProjectReference } from './useWorkspace';
-import { Button } from './components/Button';
-import { Badge } from './components/Badge';
+import { Button } from './components/Common/Button';
+import { Badge } from './components/Common/Badge';
 import { referencePurposes } from '../shared/referenceFiles';
 import { planToPayload, projectConflicts, type ImportedComponent, type ImportedReference, type ImportPlan } from '../shared/componentImport';
 import { buildSourceImport, defaultMapping, planAnyImportFromZip, type AnyImportPlan, type SourceMapping, type SourcePlan } from '../shared/sourceImport';
@@ -90,7 +90,7 @@ function conflicts(reviewed: Reviewed, components: Component[], references: Proj
 }
 function ComponentList({ items }: { items: ImportedComponent[] }) {
   return <ul className="import-list">{items.map(item => <li key={item.name} aria-label={'Imported component ' + item.name}>
-    <strong>{item.name}</strong> <Badge>{item.category === 'common' ? 'Common' : 'Composition'}</Badge> <span className="note">{item.rootPath} · {item.files.length} file{item.files.length === 1 ? '' : 's'}</span>
+    <strong>{item.name}</strong> <Badge variant={item.category === "common" ? "sky" : "lilac"}>{item.category === "common" ? "Common" : "Composition"}</Badge> <span className="note">{item.rootPath} · {item.files.length} file{item.files.length === 1 ? '' : 's'}</span>
     {item.warnings.length > 0 && <ul className="note">{item.warnings.map(text => <li key={text}>{text}</li>)}</ul>}
   </li>)}</ul>;
 }

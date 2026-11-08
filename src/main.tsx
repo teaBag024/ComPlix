@@ -1,4 +1,4 @@
-import { Button } from './components/Button';
+import { Button } from './components/Common/Button';
 import { sessionExpiry } from './sessionExpiry';
 import { createRoot } from 'react-dom/client';
 import { AuthProvider, useAuth } from 'react-oidc-context';
