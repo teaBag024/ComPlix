@@ -543,11 +543,9 @@ test('refresh keeps the same identity beyond original expiry and tab credentials
   await expect.poll(() => Date.now() > oldExpiry * 1000, { timeout: 10000 }).toBe(true);
   await expect(page.getByTestId('profile-email')).toHaveText('owner@example.test');
   const project = [...observer.conn.db.visibleProjects.iter()].find(row => row.name === 'Edited together')!;
-  await page.goto(`/projects/${project.id}/guidance`);
-  await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await page.getByLabel('Audience and component needs', { exact: true }).fill('Saved after ID-token renewal');
-  await expect(page.getByTestId('guidance-status')).toHaveText('Guidance saved');
-  await expect.poll(() => [...observer.conn.db.visibleGuidance.iter()].some(row => row.audience === 'Saved after ID-token renewal')).toBe(true);
+  await page.goto(`/projects/${project.id}/components`);
+  await createBrowserComponent(page, 'RenewedButton');
+  await expect.poll(() => [...observer.conn.db.visibleComponents.iter()].some(row => row.projectId === project.id && row.name === 'RenewedButton')).toBe(true);
   await page.reload();
   await expect(page.getByTestId('project-name')).toHaveText('Edited together');
   expect(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('oidc.')))).toBe(false);
@@ -587,63 +585,19 @@ test('browser sign-out clears data; unauthenticated screen and connection failur
 });
 
 
-test('guidance autosaves, shares live, preserves conflicts and failures, and survives restart', async ({ browser }) => {
-  const owner = await connect(ownerToken);
-  await owner.conn.reducers.createOrganization({ name: 'Guidance Team' });
-  await expect.poll(() => [...owner.conn.db.myOrganizations.iter()].some(org => org.name === 'Guidance Team')).toBe(true);
-  const org = [...owner.conn.db.myOrganizations.iter()].find(org => org.name === 'Guidance Team')!;
-  await owner.conn.reducers.createProject({ organizationId: org.id, name: 'Guided library', outputStack: 'blazor-bootstrap' });
-  await expect.poll(() => [...owner.conn.db.visibleProjects.iter()].some(row => row.organizationId === org.id)).toBe(true);
-  const project = [...owner.conn.db.visibleProjects.iter()].find(row => row.organizationId === org.id)!;
-  const context = await browser.newContext();
-  await seedBrowser(context, ownerToken);
-  const a = await context.newPage(); const b = await context.newPage();
-  for (const page of [a, b]) {
-    await page.goto('/');
-    await openProjectPage(page, 'Guided library');
-    await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  }
-  await a.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await a.getByLabel('Audience and component needs', { exact: true }).fill('Design system maintainers');
-  await expect(a.getByTestId('guidance-status')).toHaveText('Guidance saved');
-  await expect(b.getByLabel('Audience and component needs', { exact: true })).toHaveValue('Design system maintainers');
-  await a.reload();
-  await expect(a.getByLabel('Audience and component needs', { exact: true })).toHaveValue('Design system maintainers');
-  // Hold A's debounce while another editor saves, then observe conflict without overwriting A.
-  await a.clock.install(); await a.clock.pauseAt(new Date());
-  await a.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await a.getByLabel('Visual style', { exact: true }).fill('My unsaved style');
-  const existing = [...owner.conn.db.visibleGuidance.iter()].find(row => row.projectId === project.id)!;
-  const { revision, ...values } = existing;
-  await owner.conn.reducers.saveGuidance({ ...values, expectedRevision: revision, style: 'Another editor style' });
-  await expect(a.getByTestId('guidance-status')).toContainText('Conflicting changes');
-  await expect(a.getByLabel('Visual style', { exact: true })).toHaveValue('My unsaved style');
-  await a.getByRole('button', { name: 'Discard my draft and load latest' }).click();
-  await a.clock.resume();
-  await expect(a.getByLabel('Visual style', { exact: true })).toHaveValue('Another editor style');
-  await a.getByLabel('Project design guidance', { exact: true }).fill('Invalid\u0001text');
-  await expect(a.getByRole('alert')).toContainText('Each guidance answer must be at most 4000 characters');
-  await a.reload();
-  await expect(a.getByLabel('Project design guidance', { exact: true })).toHaveValue('Invalid\u0001text');
-  await a.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await a.getByLabel('Project design guidance', { exact: true }).fill('No card shadows');
-  await expect(a.getByTestId('guidance-status')).toHaveText('Guidance saved');
-  await expect(b.getByLabel('Project design guidance', { exact: true })).toHaveValue('No card shadows');
-  // A viewer sees saved text but cannot edit it.
-  await owner.conn.reducers.inviteMember({ organizationId: org.id, email: 'viewer@example.test', role: 'member', projectRole: 'viewer', projectId: project.id });
-  const viewer = await connect(viewerToken);
-  await expect.poll(() => [...viewer.conn.db.myInvitations.iter()].some(row => row.organizationId === org.id)).toBe(true);
-  await viewer.conn.reducers.acceptInvitation({ invitationId: [...viewer.conn.db.myInvitations.iter()].find(row => row.organizationId === org.id)!.id });
-  const viewerContext = await browser.newContext(); await seedBrowser(viewerContext, viewerToken);
-  const v = await viewerContext.newPage(); await v.goto('/');
-  await openProjectPage(v, 'Guided library', true);
-  await v.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await expect(v.getByLabel('Project design guidance', { exact: true })).toHaveValue('No card shadows');
-  await expect(v.getByLabel('Project design guidance', { exact: true })).toHaveAttribute('readonly', '');
-  await context.close(); await viewerContext.close();
+test('saved guidance enforces revisions, validation and persistence without a dedicated page', async () => {
+  const token = await makeToken('saved-guidance-without-page@example.test', 'Saved guidance');
+  const owner = await connect(token);
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Saved guidance library', organizationId: 0n, framework: 'React', language: 'TypeScript', styling: '', libraries: '', versions: '' });
+  const project = [...owner.conn.db.visibleProjects.iter()].find(row => row.name === 'Saved guidance library')!;
+  const values = { projectId: project.id, audience: 'Design system maintainers', technical: '', style: 'Quiet', colors: '', typography: '', spacing: '', accessibility: '', guidance: 'No card shadows' };
+  await owner.conn.reducers.saveGuidance({ ...values, expectedRevision: 0n });
+  await expect(owner.conn.reducers.saveGuidance({ ...values, expectedRevision: 0n, guidance: 'Stale edit' })).rejects.toThrow('Guidance changed');
+  await expect(owner.conn.reducers.saveGuidance({ ...values, expectedRevision: 1n, guidance: 'x'.repeat(4001) })).rejects.toThrow('Each guidance answer');
+  expect([...owner.conn.db.visibleGuidance.iter()].find(row => row.projectId === project.id)?.guidance).toBe('No card shadows');
   await stopServer(); await startServer();
-  const restored = await connect(ownerToken);
-  expect([...restored.conn.db.visibleGuidance.iter()].find(row => row.projectId === project.id)?.guidance).toBe('No card shadows');
+  const reopened = await connect(token);
+  expect([...reopened.conn.db.visibleGuidance.iter()].find(row => row.projectId === project.id)?.guidance).toBe('No card shadows');
 });
 
 
@@ -726,7 +680,7 @@ test('personal projects use explicit grants, isolate details and remove grants o
   expect((await sql(peer.token, 'SELECT * FROM workspace_project')).ok).toBe(false);
 });
 
-test('browser creates and switches private projects with independent guidance and arbitrary technology details', async ({ browser }) => {
+test('browser creates and switches private projects with arbitrary technology details and no guidance page', async ({ browser }) => {
   const context = await browser.newContext();
   // Functional navigation checks use system font fallbacks; no external font service is required.
   await context.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -759,9 +713,6 @@ test('browser creates and switches private projects with independent guidance an
   await expect(page).toHaveURL(/\/projects\/\d+\/settings$/);
   await expect(page.locator('.technology-list')).toContainText('Angular');
   await expect(page.locator('.technology-list input')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await page.getByLabel('Project design guidance', { exact: true }).fill('Angular-only guidance');
-  await expect(page.getByTestId('guidance-status')).toHaveText('Guidance saved');
   await page.getByRole('button', { name: 'All projects', exact: true }).click();
   await expandProjectCreation(page);
   await page.getByLabel('Project name', { exact: true }).fill('My MUI library');
@@ -769,22 +720,14 @@ test('browser creates and switches private projects with independent guidance an
   await page.getByRole('button', { name: 'Create project and start setup', exact: true }).click();
   await finishBrowserSetup(page);
   await expect(page.getByTestId('project-name')).toHaveText('My MUI library');
-  await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await expect(page.getByLabel('Project design guidance', { exact: true })).toHaveValue('');
-  await page.getByLabel('Project design guidance', { exact: true }).fill('MUI-only guidance');
-  await expect(page.getByTestId('guidance-status')).toHaveText('Guidance saved');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.locator('.technology-list')).toContainText('MUI');
   await expect(page.locator('.technology-list')).toContainText('Not specified');
   await expect(page.locator('.technology-list input')).toHaveCount(0);
   await page.getByLabel('Active project', { exact: true }).selectOption({ label: 'My Angular library' });
-  await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await expect(page.getByLabel('Project design guidance', { exact: true })).toHaveValue('Angular-only guidance');
   await page.reload();
   await page.getByLabel('Active project', { exact: true }).selectOption({ label: 'My MUI library' });
-  await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
   await expect(page.getByTestId('project-name')).toHaveText('My MUI library');
-  await expect(page.getByLabel('Project design guidance', { exact: true })).toHaveValue('MUI-only guidance');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.locator('.technology-list')).toContainText('MUI');
   await expect(page.locator('.technology-list input')).toHaveCount(0);
@@ -793,13 +736,16 @@ test('browser creates and switches private projects with independent guidance an
   await page.goBack();
   await expect(page).toHaveURL(/\/projects\/\d+\/settings$/);
   await expect(page.getByRole('region', { name: 'Project settings' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Design guidance', exact: true })).toHaveCount(0);
+  await page.goto(new URL(page.url()).pathname.replace(/settings$/, 'guidance'));
+  await expect(page).toHaveURL(/\/components$/);
+  await expect(page.getByRole('region', { name: 'Design guidance' })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await expect(page.getByLabel('Project design guidance', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(browserErrors, 'Project switching has no browser runtime or React errors').toEqual([]);
   await context.close();
 });
+
 
 
 test('workspace explains personal ownership, per-project stacks and multiple organization spaces', async ({ browser }) => {
@@ -988,7 +934,7 @@ test('browser uploads references, shares plain-text previews, rejects failed upl
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByRole('button', { name: 'Manage references', exact: true }).click();
   }
-  await expect(a.getByText('No references yet. Existing guidance is saved separately in Design guidance.')).toBeVisible();
+  await expect(a.getByText('No references yet. Your saved project setup guidance is retained separately.')).toBeVisible();
   const source = '<script>window.referenceExecuted = true</script>\n<button>Reference only</button>';
   await a.getByLabel('Reference purpose', { exact: true }).selectOption('implementation');
   await a.getByLabel('Reference file', { exact: true }).setInputFiles({ name: 'Button.html', mimeType: 'text/html', buffer: Buffer.from(source) });
@@ -1742,7 +1688,9 @@ test('browser setup wizard collects a questionnaire and PDF, then shows starter 
   // First-use pdf.js compilation in the Vite dev server plus two queued generations exceed the default budget.
   test.setTimeout(120000);
   const context = await browser.newContext();
-  await seedBrowser(context, await makeToken('wizard@example.test', 'Wizard User'));
+  const token = await makeToken('wizard@example.test', 'Wizard User');
+  const owner = await connect(token);
+  await seedBrowser(context, token);
   const page = await context.newPage();
   const browserErrors: string[] = [];
   page.on('pageerror', error => browserErrors.push(error.name + ': ' + error.message));
@@ -1784,8 +1732,8 @@ test('browser setup wizard collects a questionnaire and PDF, then shows starter 
   await expect(page).toHaveURL(/\/projects\/\d+\/components$/);
   await expect(page.getByText('Common/KpiCard', { exact: true })).toBeVisible();
   await expect(page.getByText('Common/Button', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Design guidance', exact: true }).click();
-  await expect(page.getByLabel('Colors', { exact: true })).toHaveValue(/#335577/);
+  const setupProjectId = BigInt(projectPath.split('/')[2]);
+  await expect.poll(() => [...owner.conn.db.visibleGuidance.iter()].find(row => row.projectId === setupProjectId)?.colors).toContain('#335577');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(projectPath + '/setup/progress');
   await expect(page.getByTestId('starter-progress')).toBeVisible();
@@ -1907,7 +1855,7 @@ test('instruction admission rejects oversized context and removed comments witho
   expect([...owner.conn.db.visibleGenerationJobs.iter()]).toHaveLength(count);
 });
 
-test('editor Stop generation preserves code and prevents late instruction acceptance', async ({ browser }) => {
+test('cancelling an editor instruction from chat preserves code and prevents late instruction acceptance', async ({ browser }) => {
   test.setTimeout(120000);
   const { owner, token, project, component, source, files, path: sourcePath } = await instructionProject('instruction-browser-stop');
   const context = await browser.newContext(); await seedBrowser(context, token);
@@ -1916,9 +1864,9 @@ test('editor Stop generation preserves code and prevents late instruction accept
   const editor = page.getByLabel('Candidate code', { exact: true });
   const content = files('Slow instruction fixture').find(file => file.path === sourcePath)!.content;
   await editor.fill(content);
-  const region = page.getByRole('region', { name: 'Editor instructions', exact: true });
+  const chat = page.getByRole('complementary', { name: 'Chat with ComPlix', exact: true });
   await expect(page.locator('.chat-bubble').filter({ hasText: 'I see your @complix request' })).toContainText('Slow instruction fixture');
-  await region.getByRole('button', { name: 'Stop generation', exact: true }).click();
+  await chat.getByRole('status', { name: 'ComPlix is thinking', exact: true }).getByRole('button', { name: 'Cancel reply', exact: true }).click();
   await expect.poll(() => [...owner.conn.db.visibleGenerationJobs.iter()].find(row => JSON.parse(row.snapshot).origin === 'editor_comment')?.state).toBe('cancelled');
   await page.waitForTimeout(3500);
   await expect(editor).toHaveValue(content);
@@ -1988,5 +1936,155 @@ test('an expired session pauses autosave, renewal swaps the connection without u
   await expect(page.getByTestId('draft-save-status')).toHaveText('Draft saved', { timeout: 30000 });
   await expect(editor).toHaveValue(edited);
   expect([...owner.conn.db.visibleComponentDrafts.iter()].find(row => row.jobId === source.id)!.files.find(file => file.path === sourcePath)!.content).toBe(edited);
+  await context.close();
+});
+
+test('a code comment instruction plays out in the chat: waiting comment, thinking, reply and edited code', async ({ browser }) => {
+  test.setTimeout(120000);
+  const { token, project, component, path: sourcePath } = await instructionProject('instruction-chat-feed');
+  const context = await browser.newContext(); await seedBrowser(context, token);
+  const page = await context.newPage(); await page.clock.install(); await page.goto(`/projects/${project.id}/components?selected=${component.id}`);
+  await page.getByLabel('Candidate file', { exact: true }).selectOption(sourcePath);
+  const chat = page.getByRole('complementary', { name: 'Chat with ComPlix', exact: true });
+  // The instruction panel lives in the chat, not under the code editor.
+  await expect(chat.getByRole('region', { name: 'Editor instructions', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Component preview and code', exact: true }).getByRole('region', { name: 'Editor instructions' })).toHaveCount(0);
+  await page.getByLabel('Candidate code', { exact: true }).fill('// @complix Slow instruction fixture\nexport const Button = () => <button>Save</button>;\n');
+  await expect(page.getByLabel('Candidate code', { exact: true })).not.toHaveClass(/agent-code-highlight/);
+  await expect(chat.locator('.chat-instruction-bubble')).toHaveText('Slow instruction fixture');
+  await expect(chat.getByRole('status', { name: 'ComPlix is thinking', exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(chat.locator('.chat-bubble-user').last()).toHaveText('Slow instruction fixture');
+  await expect(chat.locator('.chat-bubble').filter({ hasText: 'I see your @complix request' })).toBeVisible();
+  const edited = chat.getByLabel('Edited code', { exact: true });
+  await expect(edited).toBeVisible({ timeout: 30000 });
+  await expect(edited).toContainText('Draft only');
+  await expect(chat.getByRole('status', { name: 'ComPlix is thinking', exact: true })).toHaveCount(0);
+  await expect(chat.locator('.chat-instruction-bubble')).toHaveCount(0);
+  await edited.getByRole('button', { name: 'Open in editor', exact: true }).click();
+  await expect(page.getByLabel('Candidate file', { exact: true }).locator('option', { hasText: /^Button\.tsx$/ })).toHaveCount(1);
+  await page.getByLabel('Candidate file', { exact: true }).selectOption('Button.tsx');
+  const highlightedCode = page.getByLabel('Candidate code', { exact: true });
+  await expect(highlightedCode).toHaveClass(/agent-code-highlight/);
+  const firstColor = await highlightedCode.evaluate(element => getComputedStyle(element).getPropertyValue('--agent-change-color'));
+  await highlightedCode.evaluate(element => { const animation = element.getAnimations()[0]; animation.pause(); animation.currentTime = 5000; });
+  const fadingColor = await highlightedCode.evaluate(element => getComputedStyle(element).getPropertyValue('--agent-change-color'));
+  expect(fadingColor).not.toBe(firstColor);
+  await highlightedCode.screenshot({ path: '.local/agent-code-highlight.png' });
+  await page.clock.fastForward(11000);
+  await expect(highlightedCode).not.toHaveClass(/agent-code-highlight/);
+  await page.reload();
+  await expect(page.getByLabel('Candidate code', { exact: true })).not.toHaveClass(/agent-code-highlight/);
+  await context.close();
+});
+
+test('library export snapshots saved drafts, falls back after failure and includes original project references only', async () => {
+  const { owner, project, component, source, original } = await instructionProject('zip-backend');
+  const outsider = await connect(await makeToken('zip-outsider@example.test', 'Zip outsider'));
+  const saved = original.map(file => ({ ...file, content: file.content + '\n// saved ZIP edit' }));
+  await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 0n, files: saved });
+  await owner.conn.reducers.uploadReference({ projectId: project.id, filename: 'design.md', purpose: 'design', bytes: new TextEncoder().encode('Export project only') });
+  const pdf = textPdf('ZIP original PDF');
+  await owner.conn.reducers.uploadPdfReference({ projectId: project.id, filename: 'guide.pdf', purpose: 'design', bytes: new Uint8Array(pdf), text: 'ZIP original PDF' });
+  await owner.conn.reducers.createProjectWithDetails({ name: 'Other ZIP project', organizationId: 0n, framework: 'Blazor', language: 'C#', styling: '', libraries: '', versions: '' });
+  const other = [...owner.conn.db.visibleProjects.iter()].find(row => row.id !== project.id)!;
+  await owner.conn.reducers.uploadReference({ projectId: other.id, filename: 'private.txt', purpose: 'design', bytes: new TextEncoder().encode('other-project-secret-marker') });
+  await owner.conn.procedures.generateProjectChat({ projectId: project.id, componentId: component.id, requestId: randomUUID(), request: 'Rejected key fixture' });
+  const snapshot = await owner.conn.procedures.prepareLibraryExport({ projectId: project.id });
+  expect(snapshot.components).toHaveLength(1);
+  expect(snapshot.components[0]).toMatchObject({ jobId: source.id.toString(), revision: '1', origin: 'starter-placeholder' });
+  expect(snapshot.components[0].files).toEqual(saved);
+  expect(snapshot.references).toHaveLength(2);
+  expect([...snapshot.references.find(row => row.filename === 'guide.pdf')!.bytes]).toEqual([...pdf]);
+  expect(JSON.stringify(snapshot)).not.toContain('other-project-secret-marker');
+  expect(JSON.stringify(snapshot)).not.toContain('synthetic-operator-');
+  expect(JSON.stringify(snapshot)).not.toContain('writeKey');
+  expect(await outsider.conn.procedures.prepareLibraryExport({ projectId: project.id }).then(() => 'unexpected success', error => String(error))).toContain('Access denied');
+  expect(await owner.conn.procedures.prepareLibraryExport({ projectId: other.id }).then(() => 'unexpected success', error => String(error))).toContain('No saved component files');
+  // A previously returned snapshot remains an immutable copy after later saves.
+  await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 1n, files: original });
+  expect(snapshot.components[0].files).toEqual(saved);
+  expect((await owner.conn.procedures.prepareLibraryExport({ projectId: project.id })).components[0].revision).toBe('2');
+});
+
+test('library export permits explicit viewers and rejects access after grant revocation', async () => {
+  const { owner, project } = await instructionProject('zip-grants');
+  const viewer = await connect(await makeToken('zip-viewer@example.test', 'ZIP viewer'));
+  await owner.conn.reducers.createOrganization({ name: 'ZIP organization' });
+  const org = [...owner.conn.db.myOrganizations.iter()][0];
+  await owner.conn.reducers.setProjectOrganization({ projectId: project.id, organizationId: org.id });
+  await owner.conn.reducers.inviteMember({ organizationId: org.id, email: 'zip-viewer@example.test', role: 'member', projectRole: 'viewer', projectId: project.id });
+  await expect.poll(() => [...viewer.conn.db.myInvitations.iter()].length).toBe(1);
+  await viewer.conn.reducers.acceptInvitation({ invitationId: [...viewer.conn.db.myInvitations.iter()][0].id });
+  expect((await viewer.conn.procedures.prepareLibraryExport({ projectId: project.id })).components).toHaveLength(1);
+  await owner.conn.reducers.setProjectAccess({ projectId: project.id, member: [...viewer.conn.db.myProfile.iter()][0].identity, role: '' });
+  expect(await viewer.conn.procedures.prepareLibraryExport({ projectId: project.id }).then(() => 'unexpected success', error => String(error))).toContain('Access denied');
+});
+
+for (const framework of ['React', 'Blazor']) test(`${framework} library ZIP downloads saved source, handoff docs and references`, async ({ browser }) => {
+  test.setTimeout(120000);
+  const { owner, token, project, component, path: sourcePath } = await instructionProject('zip-browser-' + framework, framework);
+  const reference = new TextEncoder().encode('ZIP uploaded design reference');
+  await owner.conn.reducers.uploadReference({ projectId: project.id, filename: 'design.md', purpose: 'design', bytes: reference });
+  const context = await browser.newContext(); await seedBrowser(context, token);
+  const page = await context.newPage(); await page.goto(`/projects/${project.id}/components?selected=${component.id}`);
+  await page.getByLabel('Candidate file', { exact: true }).selectOption(sourcePath);
+  const manual = framework === 'React' ? 'export const Button = () => <button>ZIP unsaved edit</button>;' : '<button>ZIP unsaved edit</button>';
+  await page.getByLabel('Candidate code', { exact: true }).fill(manual);
+  await page.getByRole('button', { name: 'Download library ZIP', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Download component library', exact: true });
+  await expect(dialog.getByLabel('Export component revisions')).toContainText('saved revision 1');
+  const downloadEvent = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Download ZIP', exact: true }).click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toMatch(/\.zip$/);
+  const { unzipSync, strFromU8 } = await import('fflate');
+  const archive = unzipSync(readFileSync((await download.path())!));
+  const find = (suffix: string) => Object.keys(archive).find(key => key.endsWith('/' + suffix))!;
+  expect(strFromU8(archive[find('components/' + sourcePath)])).toBe(manual);
+  expect(strFromU8(archive[find('AGENTS.md')])).toContain('untrusted');
+  const manifest = JSON.parse(strFromU8(archive[find('manifest.json')]));
+  expect(manifest.references).toHaveLength(1);
+  expect([...archive[find(manifest.references[0].originalPath)]]).toEqual([...reference]);
+  expect(manifest.status).toBe('unverified');
+  await context.close();
+});
+
+test('the thinking indicator stays on screen at the bottom of a long conversation', async ({ browser }) => {
+  test.setTimeout(150000);
+  const { owner, token, project, component, path: sourcePath } = await instructionProject('instruction-long-chat');
+  // Fill the conversation so it scrolls (four turns stay under the five-per-minute chat limit with the instruction).
+  for (let index = 0; index < 4; index++) await owner.conn.procedures.generateProjectChat({ projectId: project.id, requestId: randomUUID(), request: 'Explain the library', componentId: component.id });
+  const context = await browser.newContext(); await seedBrowser(context, token);
+  const page = await context.newPage(); await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/projects/${project.id}/components?selected=${component.id}`);
+  await page.getByLabel('Candidate file', { exact: true }).selectOption(sourcePath);
+  const chat = page.getByRole('complementary', { name: 'Chat with ComPlix', exact: true });
+  const history = chat.getByLabel('Project conversation', { exact: true });
+  await expect.poll(() => history.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  await page.getByLabel('Candidate code', { exact: true }).fill('// @complix Slow instruction fixture\nexport const Button = () => <button>Save</button>;\n');
+  const thinking = chat.getByRole('status', { name: 'ComPlix is thinking', exact: true });
+  await expect(thinking).toBeVisible({ timeout: 15000 });
+  await expect(thinking).toBeInViewport();
+  // When the reply arrives, the conversation follows it to the bottom.
+  await expect(chat.getByLabel('Edited code', { exact: true })).toBeVisible({ timeout: 30000 });
+  await expect.poll(() => history.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThan(48);
+  await context.close();
+});
+
+
+test('removed guidance page redirects to Components and retains saved generation and export guidance', async ({ browser }) => {
+  test.setTimeout(120000);
+  const { owner, token, project } = await instructionProject('removed-guidance-page');
+  await owner.conn.reducers.saveGuidance({ projectId: project.id, expectedRevision: 0n, audience: 'Library users', technical: '', style: 'Quiet', colors: 'Sage green', typography: '', spacing: '', accessibility: '', guidance: 'Keep the saved rules' });
+  const context = await browser.newContext(); await seedBrowser(context, token);
+  const page = await context.newPage(); await page.goto(`/projects/${project.id}/guidance`);
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/components$`));
+  await expect(page.getByRole('button', { name: 'Design guidance', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Design guidance', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Project settings', exact: true })).toBeVisible();
+  expect([...owner.conn.db.visibleGuidance.iter()].find(row => row.projectId === project.id)?.guidance).toBe('Keep the saved rules');
+  const snapshot = await owner.conn.procedures.prepareLibraryExport({ projectId: project.id });
+  expect(snapshot.guidance).toContainEqual({ label: 'guidance', content: 'Keep the saved rules' });
   await context.close();
 });

@@ -91,6 +91,48 @@ export const EditorInstruction = __t.object("EditorInstruction", {
 });
 export type EditorInstruction = __Infer<typeof EditorInstruction>;
 
+export const ExportComponent = __t.object("ExportComponent", {
+  id: __t.string(),
+  name: __t.string(),
+  category: __t.string(),
+  rootPath: __t.string(),
+  jobId: __t.string(),
+  revision: __t.string(),
+  model: __t.string(),
+  origin: __t.string(),
+  get files() {
+    return __t.array(DraftFile);
+  },
+});
+export type ExportComponent = __Infer<typeof ExportComponent>;
+
+export const ExportGuidance = __t.object("ExportGuidance", {
+  label: __t.string(),
+  content: __t.string(),
+});
+export type ExportGuidance = __Infer<typeof ExportGuidance>;
+
+export const ExportProject = __t.object("ExportProject", {
+  id: __t.string(),
+  name: __t.string(),
+  revision: __t.string(),
+  framework: __t.string(),
+  language: __t.string(),
+  styling: __t.string(),
+  libraries: __t.string(),
+  versions: __t.string(),
+});
+export type ExportProject = __Infer<typeof ExportProject>;
+
+export const ExportReference = __t.object("ExportReference", {
+  id: __t.string(),
+  filename: __t.string(),
+  purpose: __t.string(),
+  bytes: __t.byteArray(),
+  content: __t.string(),
+});
+export type ExportReference = __Infer<typeof ExportReference>;
+
 export const GenerationConfiguration = __t.object("GenerationConfiguration", {
   mode: __t.string(),
   nvidiaEnabled: __t.bool(),
@@ -158,6 +200,24 @@ export const LegacyTransfer = __t.object("LegacyTransfer", {
   claimed: __t.bool(),
 });
 export type LegacyTransfer = __Infer<typeof LegacyTransfer>;
+
+export const LibraryExportSnapshot = __t.object("LibraryExportSnapshot", {
+  exportedAt: __t.string(),
+  get project() {
+    return ExportProject;
+  },
+  get guidance() {
+    return __t.array(ExportGuidance);
+  },
+  get components() {
+    return __t.array(ExportComponent);
+  },
+  get references() {
+    return __t.array(ExportReference);
+  },
+  warnings: __t.array(__t.string()),
+});
+export type LibraryExportSnapshot = __Infer<typeof LibraryExportSnapshot>;
 
 export const ManagedProjectShares = __t.object("ManagedProjectShares", {});
 export type ManagedProjectShares = __Infer<typeof ManagedProjectShares>;

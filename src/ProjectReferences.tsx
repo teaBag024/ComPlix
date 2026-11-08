@@ -58,7 +58,7 @@ export function ProjectReferences({ editable, references, upload, uploadPdf, rem
     </fieldset></form> : <p className="note">Read-only access. Project editors can upload and remove references.</p>}
     {phase && <p role="status">{phase}</p>}{notice && <p role="status">{notice}</p>}{error && <p role="alert">{error}</p>}
     <p>{references.length} / {MAX_PROJECT_REFERENCES} references saved</p>
-    {!references.length && <p>No references yet. Existing guidance is saved separately in Design guidance.</p>}
+    {!references.length && <p>No references yet. Your saved project setup guidance is retained separately.</p>}
     <ul className="reference-list">{references.map(row => <li key={row.id.toString()}>
       <div><strong>{row.filename}</strong><p className="note">{referencePurposes[row.purpose as keyof typeof referencePurposes] ?? row.purpose} · {row.byteLength} bytes · {isPdf(row.filename) ? 'Ready (text extracted from PDF)' : 'Ready (UTF-8 text)'}</p></div>
       <Button type="button" variant="secondary" onClick={() => setSelected(row.id.toString())}>Preview {row.filename}</Button>

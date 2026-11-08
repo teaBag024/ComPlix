@@ -487,3 +487,27 @@ Owner report: an `@complix` comment was neither picked up nor acknowledged.
 - **Instruction retry:** a run rejected for those reasons retries on the next connection. The server does not mark it blocked, because its own session check fails first.
 
 **Unchanged:** the per-mutation expiry check on the server.
+
+## Editor instructions in the chat conversation - November 8, 2026
+
+Owner request: show recognized `@complix` comments in the chat window, with a thinking indicator, the response and the edited portion, as a conversation. Implementation choices (reversible UI decisions):
+- **Instruction panel moves into the chat.** A detected comment that hasn't been sent yet appears as the user's dashed message bubble ("from your comment in Button.tsx:3") with its status. Once sent, it continues in the transcript as a normal turn.
+- **Runs in any view.** Because the panel now lives in the chat, instructions run whenever the component is open, not only in the Code view.
+- **In-conversation progress.** Component chats show progress as a typing bubble (animated dots, stage, elapsed time, Cancel reply) instead of the separate activity box. The separate "Stop generation" button was removed as a duplicate of Cancel reply.
+- **Edited portion in replies.** Assistant replies with files show a line diff against the code the request started from: changed lines with two lines of context per file, at most 60 lines each, plus Open in editor. This also applies to ordinary chat edits.
+- **Quieter acknowledgment.** "I see your @complix request…" is shown as a muted system note.
+
+
+## Full-library ZIP handoff - November 8, 2026
+
+Owner approved implementing full-library source ZIP export with human/agent documentation and every uploaded project reference. Use the newest completed non-mock source job per stable component plus its saved checkpoint; keep unverified labels and fallback to completed content after failures. One authorized backend snapshot feeds browser ZIP assembly; explicit project viewers may download. Include original reference bytes and stored extracted text, saved design/technology guidance, component docs/examples, README.md, AGENTS.md and a revision/checksum manifest. Export is a source handoff, not npm/NuGet packaging or verified promotion. Implementation defaults: 64 MiB uncompressed cap, preserve rooted paths and component-local layout, reject conflicting/unsafe paths, report missing source/dependencies and placeholders, and recheck access at download. Selective exports and clean-project certification remain future.
+
+
+## Temporary agent-code highlights - November 8, 2026
+
+Owner requested a roughly ten-second highlight that fades away on newly added ComPlix code. Added/replaced lines in newly completed provider drafts receive a theme-aware green background in the code editor, using the existing line diff and original request snapshot. The ten-second window starts when the result arrives and is shared across file/view switches. Existing history, reloads, mock/placeholder output and unchanged lines do not trigger it. Typing clears that editor highlight to prevent displaced line markers. Reduced-motion users receive a steady highlight that clears at the same deadline.
+
+
+## Remove the Design guidance page - November 8, 2026
+
+Owner requested removing the standalone Design guidance page. Remove its navigation, route view, unused frontend component and styles; legacy guidance URLs resolve to Components (or the existing setup gate for unfinished projects). Retain all saved guidance, questionnaire intake, backend revision/access rules, generation context and ZIP design.md export. No data deletion or backend migration is part of this UI removal. This supersedes earlier guidance-page navigation requirements.

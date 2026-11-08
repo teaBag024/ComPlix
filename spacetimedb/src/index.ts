@@ -727,6 +727,48 @@ export const generateProjectChat = db.procedure({ projectId: t.u64(), requestId:
   return {};
 });
 type ChatClaim = { id: bigint; snapshot: string; geminiKey: string; geminiModel: string; nvidiaKey: string; nvidiaModel: string };
+const exportComponent = t.object('ExportComponent', { id: t.string(), name: t.string(), category: t.string(), rootPath: t.string(), jobId: t.string(), revision: t.string(), model: t.string(), origin: t.string(), files: t.array(draftFile) });
+const exportReference = t.object('ExportReference', { id: t.string(), filename: t.string(), purpose: t.string(), bytes: t.array(t.u8()), content: t.string() });
+const libraryExportSnapshot = t.object('LibraryExportSnapshot', {
+  exportedAt: t.string(), project: t.object('ExportProject', { id: t.string(), name: t.string(), revision: t.string(), ...detailFields }),
+  guidance: t.array(t.object('ExportGuidance', { label: t.string(), content: t.string() })),
+  components: t.array(exportComponent), references: t.array(exportReference), warnings: t.array(t.string()),
+});
+export const prepareLibraryExport = db.procedure({ projectId: t.u64() }, libraryExportSnapshot, (ctx, args) => ctx.withTx(tx => {
+  user(tx);
+  const project = tx.db.workspaceProject.id.find(args.projectId);
+  if (!project || !permission(tx, project, tx.sender)) denied();
+  const jobs = [...tx.db.generationJob.projectId.filter(project.id)].sort((a, b) => {
+    const first = a.createdAt.microsSinceUnixEpoch; const second = b.createdAt.microsSinceUnixEpoch;
+    return first > second ? -1 : first < second ? 1 : a.id > b.id ? -1 : a.id < b.id ? 1 : 0;
+  });
+  const warnings: string[] = [];
+  if (jobs.some(job => !['draft_ready', 'preview_ready', 'failed', 'cancelled'].includes(job.state))) warnings.push('Generation is in progress. This export contains only completed saved drafts from this snapshot.');
+  if (jobs.some(job => !job.componentId && job.state === 'draft_ready' && isChatMode(job.mode))) warnings.push('Legacy project-level results without a component identity are not included in the component library export.');
+  const components = [...tx.db.component.projectId.filter(project.id)].sort((a, b) => a.rootPath.localeCompare(b.rootPath)).flatMap(component => {
+    const source = jobs.find(job => job.componentId === component.id && job.state === 'draft_ready' && isChatMode(job.mode) && (() => { try { return JSON.parse(job.artifacts).files?.length > 0; } catch { return false; } })());
+    if (!source) { warnings.push(`Component ${component.name} (${component.id}) has no completed source draft and was omitted.`); return []; }
+    const saved = tx.db.componentDraft.jobId.find(source.id);
+    const files = validateDraftFiles(saved?.files ?? JSON.parse(source.artifacts).files);
+    return [{ id: component.id.toString(), name: component.name, category: component.category, rootPath: component.rootPath,
+      jobId: source.id.toString(), revision: (saved?.revision ?? 0n).toString(), model: source.model,
+      origin: source.model ? 'generated' : 'starter-placeholder', files }];
+  });
+  if (!components.length) throw new SenderError('No saved component files are available to export.');
+  const technologies = project.framework || !project.outputStack ? project : { ...project, ...presetDetails(project.outputStack) };
+  const savedGuidance = tx.db.projectGuidance.projectId.find(project.id);
+  const guidance = (['audience', 'technical', 'style', 'colors', 'typography', 'spacing', 'accessibility', 'guidance'] as const).map(label => ({ label, content: savedGuidance?.[label] ?? '' }));
+  const references = [...tx.db.projectReference.projectId.filter(project.id)].sort((a, b) => a.id < b.id ? -1 : 1).map(row => ({ id: row.id.toString(), filename: row.filename, purpose: row.purpose, bytes: row.bytes, content: row.content }));
+  const snapshot = { exportedAt: new Date(Number(tx.timestamp.microsSinceUnixEpoch / 1000n)).toISOString(),
+    project: { id: project.id.toString(), name: project.name, revision: project.revision.toString(), framework: technologies.framework, language: technologies.language, styling: technologies.styling, libraries: technologies.libraries, versions: technologies.versions },
+    guidance, components, references, warnings };
+  const text = JSON.stringify({ ...snapshot, references: references.map(row => ({ ...row, bytes: undefined })) });
+  const bytes = new TextEncoder().encode(text).length + references.reduce((sum, row) => sum + row.bytes.length, 0);
+  if (bytes > 64 * 1024 * 1024) throw new SenderError('Library export exceeds the 64 MiB prototype limit. No files were omitted.');
+  const secrets = [tx.env.GEMINI_API_KEY?.trim(), tx.env.NVIDIA_API_KEY?.trim(), tx.env.E2B_API_KEY?.trim()].filter((value): value is string => !!value);
+  if (secrets.some(secret => text.includes(secret) || references.some(row => new TextDecoder().decode(new Uint8Array(row.bytes)).includes(secret)))) throw new SenderError('Remove credentials from library files, guidance or references before exporting.');
+  return snapshot;
+}));
 export const runEditorInstruction = db.procedure({ instructionId: t.u64(), expectedRevision: t.u64() }, t.unit(), (ctx, args) => {
   let claim: ChatClaim | undefined;
   try { claim = ctx.withTx(tx => {

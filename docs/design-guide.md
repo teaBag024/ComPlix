@@ -10,13 +10,13 @@ Status: owner-confirmed layout preferences, recorded November 7, 2026. The more 
 - Project cards make ownership/access and the requested technology stack easy to scan.
 - Keep project, organization, and invitation creation forms in accessible popup dialogs launched by their matching create actions. Closing or failing a dialog must not submit or discard an in-progress request; only successful creation closes it.
 - Opening a card enters that project's workspace. Keep a project picker available for switching projects and a clear route back to the project grid.
-- Treat the project grid, component workspace, settings, guidance, references, sharing, organizations, and invitations as separate pages with distinct URLs. Do not implement these as tabs or keep inactive pages mounted.
+- Treat the project grid, component workspace, settings, references, sharing, organizations, and invitations as separate pages with distinct URLs. Do not implement these as tabs or keep inactive pages mounted.
 - Keep `/organizations` as a responsive organization-card directory. Each card opens a dedicated organization workspace at `/organizations/:id`, with separate Overview, Projects, Members & invitations, and Settings routes.
 - The organization Projects page lists only projects the current user can access. Opening one enters its normal project workspace without carrying an extra organization mode.
 - Owners and admins can rename an organization. Members can review the space and leave, but cannot change organization settings or manage other members.
 - Project invitations are launched from project Sharing in a modal. Offer project-only, organization-only, and organization-plus-project access when the inviter is authorized to invite into the organization. Project-only access does not add organization membership.
 - Continue to show only explicitly granted projects. Organization membership/administration must not expose personal projects by itself. Removing a member continues to revoke grants to projects in the organization; online collaborator presence/activity is future work.
-- Use `/projects/:id/components` as the canonical component workspace URL. Keep Components, Design guidance, and Settings as the primary project navigation.
+- Use `/projects/:id/components` as the canonical component workspace URL. Keep Components and Settings as the primary project navigation. The separate Design guidance page was removed at the owner's request on November 8, 2026; saved intake guidance remains generation/export context.
 - Keep organization and invitation management available without making either one a prerequisite for private projects.
 
 ## Project workspace

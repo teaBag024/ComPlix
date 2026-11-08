@@ -6,13 +6,12 @@ import { ProjectCard, projectStack } from './components/ProjectCard';
 import { ProjectDetails } from './ProjectDetails';
 import { ProjectSetup, type SetupStep } from './ProjectSetup';
 import { StackPicker, defaultStackChoice, toTechnology, type StackChoice } from './StackPicker';
-import { ProjectGuidance } from './ProjectGuidance';
 import { Modal } from './components/Modal';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { DbConnection, tables } from './module_bindings';
 import { useWorkspace, endpoint, database } from './useWorkspace';
 
-type WorkspacePage = 'projects' | 'library' | 'setup' | 'settings' | 'guidance' | 'references' | 'sharing' | 'organization' | 'organizationOverview' | 'organizationProjects' | 'organizationMembers' | 'organizationSettings' | 'invitations';
+type WorkspacePage = 'projects' | 'library' | 'setup' | 'settings' | 'references' | 'sharing' | 'organization' | 'organizationOverview' | 'organizationProjects' | 'organizationMembers' | 'organizationSettings' | 'invitations';
 type WorkspaceRoute = { page: WorkspacePage; projectId?: string; organizationId?: string; step?: SetupStep };
 const setupSteps: SetupStep[] = ['questionnaire', 'references', 'components', 'progress'];
 
@@ -31,7 +30,7 @@ function readRoute(pathname: string): WorkspaceRoute {
   if (parts[0] === 'projects' && parts.length > 1 && /^\d+$/.test(parts[1])) {
     const page = parts[2];
     if (page === 'setup') return { page: 'setup', projectId: parts[1], step: setupSteps.find(step => step === parts[3]) ?? 'questionnaire' };
-    if (page === 'settings' || page === 'guidance' || page === 'references' || page === 'sharing') {
+    if (page === 'settings' || page === 'references' || page === 'sharing') {
       return { page, projectId: parts[1] };
     }
     return { page: 'library', projectId: parts[1] };
@@ -88,7 +87,7 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
   const navigate = async (page: WorkspacePage, projectId?: string, organizationId?: string, step?: SetupStep) => {
     try { await draftGuard.current?.(); }
     catch { setError('Save or resolve your draft edits before leaving the component workspace.'); return; }
-    const nextProjectId = ['library', 'setup', 'settings', 'guidance', 'references', 'sharing'].includes(page) ? projectId ?? route.projectId : undefined;
+    const nextProjectId = ['library', 'setup', 'settings', 'references', 'sharing'].includes(page) ? projectId ?? route.projectId : undefined;
     const nextOrganizationId = ['organizationOverview', 'organizationProjects', 'organizationMembers', 'organizationSettings'].includes(page)
       ? organizationId ?? route.organizationId : undefined;
     const nextStep = page === 'setup' ? step ?? 'questionnaire' : undefined;
@@ -101,7 +100,13 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
   useEffect(() => {
     const syncRoute = async () => {
       const next = readRoute(window.location.pathname);
-      try { await draftGuard.current?.(); setRoute(next); }
+      try {
+        await draftGuard.current?.();
+        if (next.page === 'library' && next.projectId && window.location.pathname !== pathFor('library', next.projectId)) {
+          window.history.replaceState({}, '', pathFor('library', next.projectId));
+        }
+        setRoute(next);
+      }
       catch {
         const previous = latestRoute.current;
         window.history.replaceState({}, '', pathFor(previous.page, previous.projectId, previous.organizationId, previous.step));
@@ -232,7 +237,6 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
         : project
         ? <nav className="project-page-nav" aria-label="Project pages">
           <Button type="button" aria-current={route.page === 'library' ? 'page' : undefined} onClick={() => navigate('library')}>Components</Button>
-          <Button type="button" aria-current={route.page === 'guidance' ? 'page' : undefined} onClick={() => navigate('guidance')}>Design guidance</Button>
           <Button type="button" aria-current={['settings', 'references', 'sharing'].includes(route.page) ? 'page' : undefined} onClick={() => navigate('settings')}>Settings</Button>
         </nav>
         : route.organizationId && org
@@ -293,11 +297,6 @@ export function OrganizationWorkspace({ token, signOut }: { token: string; signO
           {projectList === 'owned'
             ? ownedProjects.length ? cards(ownedProjects) : <p className="empty-projects">You don't own any projects yet. Use Create project to start your first library.</p>
             : visibleSharedProjects.length ? cards(visibleSharedProjects) : <p className="empty-projects">No shared projects in this organization yet.</p>}
-          </section>}
-          {route.page === 'guidance' && <section className="route-page" aria-label="Design guidance">
-          {project && connection && <ProjectGuidance key={'guidance:' + project.id.toString()} projectId={project.id}
-            identity={data.profile!.identity.toHexString()} editable={project.permission === 'editor'}
-            saved={data.guidance.find(row => row.projectId === project.id)} connection={connection} />}
           </section>}
           {route.page === 'setup' && <section className="route-page" aria-label="Setup">
           {project && connection && <ProjectSetup key={'setup:' + project.id.toString()} project={project} step={route.step ?? 'questionnaire'}

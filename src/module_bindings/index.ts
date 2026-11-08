@@ -74,6 +74,7 @@ import UploadReferenceReducer from "./upload_reference_reducer";
 // Import all procedure arg schemas
 import * as BuildComponentPreviewProcedure from "./build_component_preview_procedure";
 import * as GenerateProjectChatProcedure from "./generate_project_chat_procedure";
+import * as PrepareLibraryExportProcedure from "./prepare_library_export_procedure";
 import * as RunEditorInstructionProcedure from "./run_editor_instruction_procedure";
 
 // Import all table schema definitions
@@ -264,6 +265,7 @@ const reducersSchema = __reducers(
 const proceduresSchema = __procedures(
   __procedureSchema("build_component_preview", BuildComponentPreviewProcedure.params, BuildComponentPreviewProcedure.returnType),
   __procedureSchema("generate_project_chat", GenerateProjectChatProcedure.params, GenerateProjectChatProcedure.returnType),
+  __procedureSchema("prepare_library_export", PrepareLibraryExportProcedure.params, PrepareLibraryExportProcedure.returnType),
   __procedureSchema("run_editor_instruction", RunEditorInstructionProcedure.params, RunEditorInstructionProcedure.returnType),
 );
 

@@ -1,4 +1,6 @@
 import { Button } from './components/Button';
+import { LibraryDownload } from './LibraryDownload';
+import { CodeEditor, AGENT_HIGHLIGHT_MS } from './components/CodeEditor';
 import { EditorInstructions } from './EditorInstructions';
 import { isChatMode } from '../shared/generationWorkflow';
 import { useDraftEditor } from './useDraftEditor';
@@ -56,6 +58,13 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
   const chatAttempt = useRef(0);
   const [chatPending, setChatPending] = useState(false);
   const ordered = [...jobs].sort((a, b) => a.id > b.id ? -1 : 1);
+  const seenAgentResults = useRef(new Set(allJobs.filter(row => row.state === 'draft_ready').map(row => row.id.toString())));
+  const [recentAgentResults, setRecentAgentResults] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const newlyReady = allJobs.filter(row => row.state === 'draft_ready' && !!row.model && isChatMode(row.mode) && !seenAgentResults.current.has(row.id.toString()));
+    for (const row of allJobs) if (row.state === 'draft_ready') seenAgentResults.current.add(row.id.toString());
+    if (newlyReady.length) setRecentAgentResults(old => ({ ...Object.fromEntries(Object.entries(old).filter(([, expiry]) => expiry > Date.now())), ...Object.fromEntries(newlyReady.map(row => [row.id.toString(), Date.now() + AGENT_HIGHLIGHT_MS])) }));
+  }, [allJobs]);
   const lastSelectedJob = useRef<GenerationJob | undefined>(undefined);
   const job = selectedExample ? undefined : jobs.find(row => row.id.toString() === selectedJob) ?? (selectedJob && lastSelectedJob.current?.id.toString() === selectedJob ? lastSelectedJob.current : undefined) ?? ordered.find(row => ['draft_ready', 'preview_ready'].includes(row.state) && hasFiles(row)) ?? ordered[0];
   lastSelectedJob.current = job;
@@ -112,6 +121,7 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
     finally { running.current = false; setBusy(false); }
   }
   return <section className="component-library">
+    <LibraryDownload projectId={projectId} connection={connection} flush={() => editor.flush()} />
     <p role="status">{adapter ? `${adapter.label}: saved drafts preview automatically in an isolated E2B sandbox.` : 'Unsupported target stack: no matching adapter. Code and Docs remain available; compilation and preview are unavailable.'}</p>
     <dialog ref={creation} aria-labelledby="create-component-title"><form onSubmit={event => {
       event.preventDefault(); setCreating(true); setCreationError('');
@@ -152,15 +162,10 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
               : !job ? <div className="library-empty-state"><span className="eyebrow">Current library</span><strong>No published components yet</strong><p>Select a saved draft to build and inspect its actual compiled output.</p></div> : null)}
           {!example && !preview && <div hidden={view !== 'preview'}><StackPreview key={job?.id.toString() ?? 'empty'} adapter={adapter} connection={connection} jobId={job && isChatMode(job.mode) && job.state === 'draft_ready' && files.length ? job.id : undefined} savedRevision={editor.revision} unsaved={editor.unsaved} preview={previews.find(row => row.jobId === job?.id)} editable={editable && !selectedJobDeleted} active={view === 'preview'} /></div>}
           {view === 'source' && <>{files.length ? <><label>Candidate file<select aria-label="Candidate file" value={file?.path ?? ''} onChange={event => setSelectedFile(event.target.value)}>{files.map(item => <option key={item.path}>{item.path}</option>)}</select></label><p role="status" data-testid="draft-save-status">{editor.status}</p>
-              <textarea className="code-editor" aria-label="Candidate code" data-testid="candidate-source" spellCheck={false} readOnly={!canEdit} value={file?.content ?? ''} onChange={event => file && editor.change(file.path, event.target.value)} />
-              {component && job && <EditorInstructions key={`${component.id}:${job.id}`} componentId={component.id} sourceJobId={job.id} revision={editor.revision}
-                files={files} unsaved={editor.unsaved} saveError={editor.error} editable={!!canEdit} available={chatEnabled && !!adapter}
-                busy={allJobs.some(active) || chatPending || busy} connection={connection} instructions={instructions} jobs={allJobs}
-                onResult={(id, sourceId, revision) => {
-                  if (lastSelectedJob.current?.id !== sourceId || editor.isUnsaved() || editor.revision !== revision) return;
-                  const result = [...connection.db.visibleGenerationJobs.iter()].find(row => row.id === id);
-                  if (result && hasFiles(result)) { setSelectedExample(''); setSelectedJob(id.toString()); setSelectedFile(''); }
-                }} />}
+              <CodeEditor key={`${job?.id}:${file?.path}`} value={file?.content ?? ''} readOnly={!canEdit} onChange={value => file && editor.change(file.path, value)}
+                highlightUntil={job ? recentAgentResults[job.id.toString()] : undefined}
+                generated={(() => { try { return JSON.parse(job?.artifacts || '{}').files?.find((item: { path: string }) => item.path === file?.path)?.content ?? ''; } catch { return ''; } })()}
+                before={(() => { try { return JSON.parse(job?.snapshot || '{}').candidateFiles?.find((item: { path: string }) => item.path.toLowerCase() === file?.path.toLowerCase())?.content ?? ''; } catch { return ''; } })()} />
               {editor.error && <div role="alert"><p>{editor.error}</p>{!editor.error.includes('Draft changed.') && <Button type="button" onClick={() => editor.retry()}>Retry draft save</Button>}<Button type="button" variant="secondary" onClick={() => editor.reload()}>Discard local edits and load saved draft</Button></div>}
               <p className="note">{canEdit ? 'Edits autosave as an unverified draft. Source, examples and documentation share this file set; build explicitly from Preview to execute a saved revision.' : 'Read-only draft. Illustrative mock fixtures cannot be edited.'}</p></>
             : example ? <><p className="example-disclaimer">Illustrative source — not generated or saved to this library.</p><pre data-testid="example-source">{example.source}</pre></> : <p>No candidate source files yet.</p>}</>}
@@ -172,7 +177,16 @@ export function ProjectLibrary({ projectId, target, instructions = [], draftGuar
             ? `All ${references.length} saved project reference${references.length === 1 ? ' is' : 's are'} included automatically.`
             : 'No saved project references; any added later will be included automatically.'}</p>
           <p className="note">{job && isChatMode(job.mode) && files.length ? `Chat context: selected draft: ${job.request}` : 'Chat context: project guidance and latest generated draft.'}</p>
-          <ProjectChat key={component?.id.toString() ?? 'legacy'} component={component} messages={messages.filter(row => row.componentId === component?.id)} clear={async () => { if (component) await connection.reducers.clearComponentChat({ componentId: component.id }); }} jobs={jobs} editable={editable} available={chatEnabled && (!!component || jobs.length > 0)} pending={busy || chatPending || hasActive}
+          <ProjectChat key={component?.id.toString() ?? 'legacy'} component={component}
+            instructionPanel={component && job ? <EditorInstructions key={`${component.id}:${job.id}`} componentId={component.id} sourceJobId={job.id} revision={editor.revision}
+                files={files} unsaved={editor.unsaved} saveError={editor.error} editable={!!canEdit} available={chatEnabled && !!adapter}
+                busy={allJobs.some(active) || chatPending || busy} connection={connection} instructions={instructions} jobs={allJobs}
+                onResult={(id, sourceId, revision) => {
+                  if (lastSelectedJob.current?.id !== sourceId || editor.isUnsaved() || editor.revision !== revision) return;
+                  const result = [...connection.db.visibleGenerationJobs.iter()].find(row => row.id === id);
+                  if (result && hasFiles(result)) { setSelectedExample(''); setSelectedJob(id.toString()); setSelectedFile(''); }
+                }} /> : undefined}
+            openJob={id => { if (editor.isUnsaved()) return; setSelectedExample(''); setSelectedJob(id.toString()); setSelectedFile(''); setView('source'); }} messages={messages.filter(row => row.componentId === component?.id)} clear={async () => { if (component) await connection.reducers.clearComponentChat({ componentId: component.id }); }} jobs={jobs} editable={editable} available={chatEnabled && (!!component || jobs.length > 0)} pending={busy || chatPending || hasActive}
             statusLabel={chatEnabled ? 'ComPlix chat ready' : mode === 'mock' ? 'Local mock workflow' : 'Providers not configured'} cancel={async () => {
               const waiting = jobs.find(row => isChatMode(row.mode) && active(row));
               if (waiting) await connection.reducers.cancelGeneration({ jobId: waiting.id });

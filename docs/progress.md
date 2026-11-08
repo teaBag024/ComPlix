@@ -678,3 +678,44 @@ Checks actually run:
   - a `//` line comment is saved as pending, runs and gets chat messages;
   - an expired session mid-edit shows "Waiting to save…", renewal swaps the connection without unmounting, and the edit then saves (frontend 57173 / backend 57100).
 - Full Playwright suite: 88 passed, 4 skipped (opt-in live E2B), exit 0. Republished local `complix-local` with `--delete-data=never`.
+
+## Editor instructions in the chat - November 8, 2026
+
+On `feat/chat-instruction-feed`, on top of `fix/editor-instructions-reliability`.
+
+Changes:
+- Moved the instruction panel into the component chat.
+- Added the in-conversation typing bubble and per-reply edited-code diffs (`src/lineDiff.ts`).
+- Removed the duplicate Stop generation button; Codex's stop test now uses the chat's Cancel reply.
+
+Checks actually run:
+- Typecheck and build passed.
+- New diff unit tests: 3 passed.
+- New browser test of the full flow passed: the pending comment bubble, thinking indicator, acknowledgment, reply with edited code, and Open in editor.
+- The affected chat and editor tests (slow-reply cancel, operator chat, component explorer, editor autosave, instruction stop) passed.
+- Screenshots of the thinking and done states were reviewed.
+
+
+## Full-library ZIP export - November 8, 2026
+
+Implemented on `feat/library-zip-export` after owner approval. Added the read-only `prepareLibraryExport` procedure: one transaction authorizes project read access, selects each stable component's latest completed non-mock job (timestamp/ID ordering), overlays saved checkpoints, includes all original reference bytes/text and saved guidance/technology details, and rejects known operator secrets or over-64-MiB snapshots. Placeholders and omitted legacy/unavailable source are explicitly reported. Owners and explicitly granted viewers/editors can export; revocation is rechecked at download. No schema table migration; generated client procedure/types updated.
+
+Added LibraryDownload to the component workspace: flush open draft, review immutable snapshot/revisions, then download. Lazy shared libraryExport ZIP assembly (fflate 0.8.3, official README consulted) preserves source/docs/examples, includes human README and AGENTS guidance, design/technology/dependency/validation notes, every reference original plus stored extracted text, and a SHA-256 manifest. Component-relative structure is preserved; legacy unrooted files are scoped under their owning component, with original/archive mapping and no import rewriting. Static JS/TS dependencies are inventoried; unresolved imports and missing documentation are reported without invented versions. Unsafe/conflicting paths fail rather than overwrite. Usage/limits: docs/library-export.md. All results remain unverified source handoffs, not installable packages or promotion.
+
+Validation: final seven export-focused unit/integration/browser tests passed (exit 0, frontend 57673/backend 57600/database complix-zip-final). Covers exact PDF/reference bytes, saved manual edits including flush-before-download, failure fallback, project isolation, viewer access/revocation, immutable snapshots, ZIP extraction/checksums, React and Blazor browser downloads, traversal/Windows paths/conflicts and dependency warnings. Initial six-test run also passed. Final frontend/module strict typechecks, production build and backend build passed; existing >500 kB main-chunk warning remains, export logic is a lazy chunk. git diff --check passed.
+
+Full regression attempted: 52 passed, 4 skipped (opt-in live), 46 did not run, 1 failed (103 total), on frontend 57573/backend 57500/database complix-zip-regression. The serial foundation suite stopped before export tests when the existing two-browser workspace test timed out waiting for Organizations during initial load; its snapshot showed Cannot load the workspace. No intake form changes or connection workaround was made. The final targeted export suite independently passed. Full suite is not green. Clean consuming-project compilation of actual generated libraries was not performed; exports disclose that integration is unverified. No provider/E2B calls, operator credential reads, local application publication, commit or push. Existing/concurrent chat-feed/style edits and the user's test PDF were preserved. Backend publication and browser reload remain necessary to use the new API locally.
+
+
+## Fading agent-code highlights - November 8, 2026
+
+Implemented on feat/fading-agent-code-highlights. Added CodeEditor, new-line positions in the existing line diff, result-arrival tracking in ProjectLibrary and a ten-second green-to-transparent CSS animation. Uses native textarea backgrounds, so editing, selection and scrolling remain native. Adjacent added lines share gradient ranges. Existing drafts do not replay highlights; manual typing clears them. Reduced-motion mode holds a steady highlight until expiry. Existing ZIP-export/chat-feed/intake work was preserved; no backend/API changes.
+
+Validation: frontend/module typechecks and production build passed (existing main-chunk warning). All three diff tests passed, including added-line positions. The extended instruction/chat browser test passed after correcting its fake-clock installation to occur before application timers (initial test clock setup failed, not the production fade). It checks no highlight on initial manual edits, new agent highlight, changing animated color, ten-second expiry and no replay after reload. Screenshot .local/agent-code-highlight.png was visually reviewed at mid-fade. Final browser run exit 0 on frontend 57773/backend 57700/database complix-code-highlight. git diff --check passed. No full regression rerun, provider/sandbox call, local publication, commit or push. Frontend-only behavior; refresh the frontend to inspect it.
+
+
+## Remove standalone Design guidance page - November 8, 2026
+
+On refactor/remove-design-guidance-page, removed the navigation entry, page render/import/type, unused ProjectGuidance.tsx and page-only CSS. Old guidance URLs resolve to Components with canonical URLs on initial load/history; unfinished projects retain the existing setup gate. Updated reference empty-state wording, README and workspace design guide. Saved guidance, setup questionnaire, backend authorization/revision/persistence, generation snapshots and ZIP design exports remain intact. No backend/schema changes.
+
+Migrated tests away from the retired screen: session renewal now proves a persisted component mutation; project switching still checks technologies/navigation; standalone guidance persistence/revision validation stays covered at the backend; wizard guidance is checked through its authorized subscription. Added a browser check for absent navigation, old-route redirect, working Settings and retained export guidance. Six relevant tests passed across isolated runs: saved-guidance persistence and project switching (frontend 57873/backend 57800), organization grants/session renewal/reference uploads (57973/57900, exit 0), and removed-route/data preservation (58073/58000, exit 0). Frontend/module typechecks, production build and git diff --check passed; existing main-chunk warning remains. The broader four-test run had two passes then timed out on existing wizard PDF extraction before its guidance assertion, skipping the final route test, which passed independently. An initial test-only missing observer variable was corrected. Full suite was not rerun. No intake-form redesign, data deletion, provider/sandbox calls, publication, commit or push.

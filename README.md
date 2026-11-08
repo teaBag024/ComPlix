@@ -108,7 +108,7 @@ For real-provider acceptance: sign in with Google, verify the name/email and wor
 - src/OrganizationWorkspace.tsx: organization, project and access UI.
 - src/ProjectDetails.tsx: requested framework/language/styling/library/version details and revision-checked edits.
 - src/ProjectReferences.tsx and shared/referenceFiles.ts: scoped reference intake UI and shared validation.
-- src/ProjectGuidance.tsx: autosaved questionnaire, design document text preview and draft conflict recovery.
+- src/ProjectSetup.tsx: project intake questionnaire and saved design guidance used by generation.
 - src/module_bindings/: generated from the module; regenerate instead of editing.
 - tests/foundation.spec.ts and tests/fixtures/: live regression tests.
 - docs/decisions.md and docs/progress.md: accepted choices, evidence and open limits.
