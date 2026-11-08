@@ -24,9 +24,10 @@ export default defineConfig({
     video: 'off',
   },
   webServer: {
-    command: `node node_modules/vite/bin/vite.js --host 127.0.0.1 --port ${frontendPort} --strictPort`,
+    // A per-port dependency cache keeps test servers from rewriting the one `npm run dev` serves.
+    command: `node node_modules/vite/bin/vite.js --config tests/vite.test.config.mjs --host 127.0.0.1 --port ${frontendPort} --strictPort`,
     url: origin,
     reuseExistingServer: false,
-    env: { VITE_SPACETIME_URI: `http://127.0.0.1:${backendPort}`, VITE_SPACETIME_DATABASE: database, VITE_AUTH_REDIRECT_ORIGIN: origin },
+    env: { VITE_SPACETIME_URI: `http://127.0.0.1:${backendPort}`, VITE_SPACETIME_DATABASE: database, VITE_AUTH_REDIRECT_ORIGIN: origin, COMPLIX_VITE_CACHE_DIR: `node_modules/.vite-test-${frontendPort}` },
   },
 });
