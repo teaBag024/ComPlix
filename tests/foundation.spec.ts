@@ -1943,3 +1943,50 @@ test('provider-generated instruction markers stay inert through unrelated editor
   expect(records()).toHaveLength(1);
   expect(records()[0].state).toBe('pending');
 });
+
+test('a plain // @complix line comment is detected on save, acknowledged in chat and runs', async () => {
+  const { owner, component, source, original, path: sourcePath } = await instructionProject('instruction-line-comment');
+  const files = original.map(file => file.path === sourcePath ? { ...file, content: '// @complix Make the button green\nexport const Button = () => <button>Save</button>;\n' } : file);
+  await owner.conn.reducers.saveComponentDraft({ jobId: source.id, expectedRevision: 0n, files });
+  const record = [...owner.conn.db.visibleEditorInstructions.iter()].find(row => row.componentId === component.id)!;
+  expect(record).toMatchObject({ state: 'pending', text: 'Make the button green', line: 1 });
+  await owner.conn.procedures.runEditorInstruction({ instructionId: record.id, expectedRevision: 1n });
+  const linked = [...owner.conn.db.visibleEditorInstructions.iter()].find(row => row.id === record.id)!;
+  expect([...owner.conn.db.visibleGenerationJobs.iter()].find(row => row.id === linked.jobId)?.state).toBe('draft_ready');
+  const chat = [...owner.conn.db.visibleComponentChat.iter()].filter(row => row.componentId === component.id && row.jobId === linked.jobId).map(row => row.role);
+  expect(chat).toEqual(expect.arrayContaining(['system', 'user', 'assistant']));
+});
+
+test('an expired session pauses autosave, renewal swaps the connection without unmounting, and the save completes', async ({ browser }) => {
+  test.setTimeout(150000);
+  const { owner, token, project, component, source, path: sourcePath } = await instructionProject('session-renewal-editor');
+  const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+  // The server treats this credential as expired after 20 s (fixture_exp); the browser schedules renewal from
+  // the stored access expiry, 5 minutes before it, so renewal starts about 30 s in.
+  const expiring = signed({ ...claims, fixture_exp: Math.floor(Date.now() / 1000) + 20 });
+  const context = await browser.newContext();
+  await seedBrowser(context, expiring, 'editor-renewal-refresh', Math.floor(Date.now() / 1000) + 330);
+  let refreshes = 0;
+  await context.route('https://auth.spacetimedb.com/**', route => {
+    if (route.request().url().includes('.well-known')) return route.fulfill({ json: { issuer: authority, authorization_endpoint: authority + '/authorize', token_endpoint: authority + '/token', jwks_uri: authority + '/jwks' } });
+    if (new URLSearchParams(route.request().postData() ?? '').get('grant_type') !== 'refresh_token') return route.abort();
+    refreshes++;
+    return route.fulfill({ json: { id_token: token, access_token: 'editor-renewal-access', refresh_token: 'editor-renewal-rotated', token_type: 'Bearer', expires_in: 3600 } });
+  });
+  const page = await context.newPage(); await page.goto(`/projects/${project.id}/components?selected=${component.id}`);
+  await page.getByLabel('Candidate file', { exact: true }).selectOption(sourcePath);
+  const editor = page.getByLabel('Candidate code', { exact: true });
+  await expect(editor).toBeVisible();
+  // Wait until the server rejects the first credential, then edit before renewal has happened.
+  await page.waitForTimeout(21000);
+  expect(refreshes).toBe(0);
+  const edited = 'export const Button = () => <button>Saved after renewal</button>;\n';
+  await editor.fill(edited);
+  await expect(page.getByTestId('draft-save-status')).toHaveText('Waiting to save…');
+  // Renewal arrives; the editor keeps its text (no workspace reload) and the save goes through on the new connection.
+  await expect.poll(() => refreshes, { timeout: 60000 }).toBeGreaterThan(0);
+  await expect(page.getByTestId('draft-save-status')).toHaveText('Draft saved', { timeout: 30000 });
+  await expect(editor).toHaveValue(edited);
+  expect([...owner.conn.db.visibleComponentDrafts.iter()].find(row => row.jobId === source.id)!.files.find(file => file.path === sourcePath)!.content).toBe(edited);
+  await context.close();
+});

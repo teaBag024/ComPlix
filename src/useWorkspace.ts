@@ -17,7 +17,7 @@ import type guidanceSchema from './module_bindings/visible_guidance_table';
 import type starterSchema from './module_bindings/visible_starter_tasks_table';
 export type StarterTask = Infer<typeof starterSchema>;
 export type Guidance = Infer<typeof guidanceSchema>;
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DbConnection, tables } from './module_bindings';
 import type { UserProfile, OrganizationSummary, ProjectSummary, MemberSummary, InvitationSummary, ProjectShareSummary } from './module_bindings/types';
 
@@ -29,6 +29,11 @@ export function useWorkspace(token: string, attempt: number) {
   const [data, setData] = useState(empty);
   const [connection, setConnection] = useState<DbConnection>();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  // The connection currently serving the workspace. Sign-in renewal (a new token for the same user, about
+  // every 13 minutes) opens a replacement in the background and swaps only once it is subscribed, so the
+  // workspace and any open editor stay mounted. A different user remounts this hook (keyed by subject).
+  const live = useRef<DbConnection | undefined>(undefined);
+  useEffect(() => () => { live.current?.disconnect(); live.current = undefined; }, []);
   useEffect(() => {
     let disposed = false;
     let failed = false;
@@ -41,12 +46,15 @@ export function useWorkspace(token: string, attempt: number) {
       setData(empty());
       setConnection(undefined);
       setStatus('error');
+      live.current?.disconnect(); live.current = undefined;
       conn?.disconnect();
     };
     const timeout = window.setTimeout(fail, 15000);
-    setStatus('loading');
-    setData(empty());
-    setConnection(undefined);
+    if (!live.current) {
+      setStatus('loading');
+      setData(empty());
+      setConnection(undefined);
+    }
     try {
       conn = DbConnection.builder().withUri(endpoint).withDatabaseName(database).withToken(token)
         .onConnect(ctx => {
@@ -76,15 +84,19 @@ export function useWorkspace(token: string, attempt: number) {
               if (disposed || failed) return;
               initialized = true;
               window.clearTimeout(timeout);
+              const previous = live.current;
+              live.current = conn;
               refresh();
               setConnection(ctx);
               setStatus('ready');
+              // Retire the renewed-away connection only after the replacement is live.
+              if (previous && previous !== conn) previous.disconnect();
             }).onError(fail).subscribe([tables.myProfile, tables.myOrganizations, tables.visibleProjects, tables.organizationMembers, tables.myInvitations, tables.visibleGuidance, tables.managedProjectShares, tables.visibleReferences, tables.visibleGenerationJobs, tables.visibleComponentDrafts, tables.visibleComponentPreviews, tables.visibleComponents, tables.visibleComponentChat, tables.visibleStarterTasks, tables.visibleEditorInstructions, tables.generationSettings]);
           }).catch(fail);
         }).onDisconnect(fail).onConnectError(fail).build();
     } catch { fail(); }
-    return () => { disposed = true; window.clearTimeout(timeout); conn?.disconnect(); };
+    // A connection that became live stays open until its replacement is ready (or the hook unmounts).
+    return () => { disposed = true; window.clearTimeout(timeout); if (conn !== live.current) conn?.disconnect(); };
   }, [token, attempt]);
-  // Do not show an old session's snapshot during the effect cleanup on token changes.
   return { data, connection, status };
 }

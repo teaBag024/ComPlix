@@ -15,6 +15,9 @@ export function EditorInstructions({ componentId, sourceJobId, revision, files, 
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const attempted = useRef(new Set<string>());
+  // A run rejected for an expired sign-in or lost connection is retried once a new connection exists.
+  const retryAfter = useRef<{ key: string; connection: DbConnection } | undefined>(undefined);
+  if (retryAfter.current && retryAfter.current.connection !== connection) { attempted.current.delete(retryAfter.current.key); retryAfter.current = undefined; }
   const latest = useRef({ onResult, sourceJobId, revision });
   latest.current = { onResult, sourceJobId, revision };
   const records = instructions.filter(row => row.componentId === componentId);
@@ -31,7 +34,13 @@ export function EditorInstructions({ componentId, sourceJobId, revision, files, 
         const record = [...connection.db.visibleEditorInstructions.iter()].find(row => row.id === pending.id);
         const result = record && [...connection.db.visibleGenerationJobs.iter()].find(job => job.id === record.jobId);
         if (result?.state === 'draft_ready' && latest.current.sourceJobId === sourceJobId && latest.current.revision === revision) latest.current.onResult(result.id, sourceJobId, revision);
-      }).catch(() => setError('Instruction could not be confirmed. Check your connection, access, project context and request limit. Retry explicitly; it will not automatically repeat.'))
+      }).catch(cause => {
+        const message = String(cause);
+        if (message.includes('Your session expired') || /disconnect|not connected|websocket|closed|timed out/i.test(message)) {
+          retryAfter.current = { key: attemptKey, connection };
+          setError('Waiting for your sign-in to renew; the instruction will run automatically.');
+        } else setError('Instruction could not be confirmed. Check your connection, access, project context and request limit. Retry explicitly; it will not automatically repeat.');
+      })
         .finally(() => setSending(false));
     }, INSTRUCTION_IDLE_MS);
     return () => window.clearTimeout(timer);
@@ -44,7 +53,7 @@ export function EditorInstructions({ componentId, sourceJobId, revision, files, 
   }
 
   return <section aria-label="Editor instructions" className="editor-instructions">
-    <p className="note">Add a JSX <code>{'{/* @complix Make this green */}'}</code> or Razor <code>@* @complix Make this green *@</code> comment. New editor instructions run automatically after saving and a two-second pause. Keep comments complete and specific. Razor comments must precede executable Razor sections. Duplicate markers and unsupported syntax stay inactive.</p>
+    <p className="note">Write a comment starting with <code>@complix</code>, such as <code>{'// @complix Make this green'}</code>, <code>{'{/* @complix Make this green */}'}</code> or Razor <code>@* @complix Make this green *@</code>. New instructions run automatically after the draft saves and you pause typing for two seconds. Keep them complete and specific. Razor comments must be in markup, before executable Razor sections. Identical duplicate instructions stay inactive.</p>
     <p role="status">{!editable ? 'Read-only instructions.' : !available ? 'Automatic instructions unavailable for this stack or provider configuration.' : saveError ? 'Instructions paused until the draft save succeeds.' : unsaved ? 'Waiting for autosave.' : busy || active || sending ? 'Generation in progress; further instructions wait.' : pending ? 'Instruction ready; waiting for typing to stop.' : 'No new instructions waiting.'}</p>
     {error && <p role="alert">{error}</p>}
     <ul>{markers.map(marker => {

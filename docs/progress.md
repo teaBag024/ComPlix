@@ -659,3 +659,22 @@ Later the same day (owner-approved):
 ## Immediate editor-instruction acknowledgment - November 8, 2026
 
 On feat/acknowledge-editor-instructions, added a component-chat receipt message atomically with instruction acceptance, before Gemini/Nemotron execution. It includes the source location and instruction text, appears through existing subscriptions and cannot duplicate on repeated claims. Updated usage notes. Two focused backend/browser tests passed: idempotent acknowledgment and visibility before a deliberately slow provider response completes, followed by safe cancellation (frontend 54273/backend 54200/database complix-instruction-ack). Frontend/module typechecks, backend compilation and git diff --check passed. No schema/API changes, live provider request, local publication, commit or push. Backend must be republished for the running app to show this new acknowledgment.
+
+## Editor instruction reliability - November 8, 2026
+
+On `fix/editor-instructions-reliability` (from `feat/project-foundation` plus the vite-cache fix):
+- Committed the other session's uncommitted chat acknowledgment as-is (`b12a278`).
+- Fixed instruction pickup and session handling (see decisions.md).
+- Fixed a garbled quote in `docs/editor-instructions.md`.
+
+Diagnosis used:
+- The live module log: repeated session-expired `save_component_draft` errors and no `run_editor_instruction` calls.
+- Owner-reported browser token timings (15-minute ID token with a refresh token; renewal working), printed without token contents.
+
+Checks actually run:
+- Typechecks and build passed.
+- Instruction detector unit tests: 4 passed, updated for the wider comment rule.
+- 8 focused integration and browser tests passed, including two new ones:
+  - a `//` line comment is saved as pending, runs and gets chat messages;
+  - an expired session mid-edit shows "Waiting to save…", renewal swaps the connection without unmounting, and the edit then saves (frontend 57173 / backend 57100).
+- Full Playwright suite: 88 passed, 4 skipped (opt-in live E2B), exit 0. Republished local `complix-local` with `--delete-data=never`.

@@ -6,7 +6,11 @@ import { validateDraftFiles } from '../shared/draftFiles';
 
 const safeErrors = ['Draft changed. Your local edits were not overwritten.', 'Project edit access is required.',
   'Only generated code drafts can be edited.', 'Draft files exceed 256 KiB.', 'Remove credentials from draft files.'];
-type EditorState = { id?: bigint; files: WorkspaceFile[]; saved: string; revision: bigint; saving: boolean; error: string };
+// Failures that a fresh connection can fix: an expired sign-in (renewal reconnects) or a dropped/slow connection.
+export const SESSION_WAIT = 'Your sign-in is being renewed. Edits are kept and will save automatically.';
+const CONNECTION_WAIT = 'Draft save could not be confirmed. Your local edits are still shown and will retry when the connection is restored.';
+const transient = (message: string) => message.includes('Your session expired') || message.includes('timed out') || /disconnect|not connected|websocket|closed/i.test(message);
+type EditorState = { id?: bigint; files: WorkspaceFile[]; saved: string; revision: bigint; saving: boolean; error: string; failedOn?: DbConnection };
 
 export function useDraftEditor(connection: DbConnection, jobId: bigint | undefined, original: WorkspaceFile[], saved?: ComponentDraft) {
   const [, render] = useState(0);
@@ -45,7 +49,9 @@ export function useDraftEditor(connection: DbConnection, jobId: bigint | undefin
         }
       } catch (cause) {
         const message = String(cause);
-        attempt.error = safeErrors.find(item => message.includes(item)) ?? 'Draft save could not be confirmed. Your local edits are still shown. Check your connection and retry.';
+        attempt.error = safeErrors.find(item => message.includes(item))
+          ?? (message.includes('Your session expired') ? SESSION_WAIT : transient(message) ? CONNECTION_WAIT : 'Draft save could not be confirmed. Your local edits are still shown. Check your connection and retry.');
+        attempt.failedOn = connection;
         throw new Error(attempt.error);
       } finally { attempt.saving = false; update(); }
     };
@@ -82,9 +88,15 @@ export function useDraftEditor(connection: DbConnection, jobId: bigint | undefin
     const timer = window.setTimeout(() => { void flush().catch(() => {}); }, 500);
     return () => window.clearTimeout(timer);
   });
+  // A renewed sign-in or restored connection arrives as a new connection object: retry the waiting save on it.
+  useEffect(() => {
+    if (!current.error || !(current.error === SESSION_WAIT || current.error === CONNECTION_WAIT) || current.failedOn === connection) return;
+    current.error = ''; current.failedOn = undefined; update();
+    void flush().catch(() => {});
+  }, [connection, current.error]);
   return {
     files: current.files, revision: current.revision, unsaved: dirty() || current.saving,
-    error: current.error, status: current.error ? 'Draft not saved' : current.saving ? 'Saving draft…' : dirty() ? 'Unsaved draft changes' : saved || current.revision ? 'Draft saved' : 'Unverified generated draft',
+    error: current.error, status: current.error === SESSION_WAIT || current.error === CONNECTION_WAIT ? 'Waiting to save…' : current.error ? 'Draft not saved' : current.saving ? 'Saving draft…' : dirty() ? 'Unsaved draft changes' : saved || current.revision ? 'Draft saved' : 'Unverified generated draft',
     change(path: string, content: string) {
       current.files = current.files.map(file => file.path === path ? { ...file, content } : file);
       update();

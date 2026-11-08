@@ -14,7 +14,7 @@ function instruction(path: string, source: string, value: string, offset: number
   return [{ path, text, line: source.slice(0, offset).split('\n').length, key: instructionKey(path, text) }];
 }
 
-/** Razor subset: markup comments, outside tags, HTML comments and script/style content.
+/** Razor subset: Razor `@* *@` and HTML `<!-- -->` comments in markup, outside tags and script/style content.
  * Stop at executable Razor transitions rather than trying to parse arbitrary C# strings.
  * Comments before a trailing @code block remain supported. */
 function razorInstructions(path: string, source: string): EditorInstruction[] {
@@ -29,6 +29,7 @@ function razorInstructions(path: string, source: string): EditorInstruction[] {
     } else if (source.startsWith('<!--', i)) {
       const end = source.indexOf('-->', i + 4);
       if (end < 0) break;
+      found.push(...instruction(path, source, source.slice(i + 4, end), i));
       i = end + 3;
     } else if (source[i] === '<') {
       const start = i++;
@@ -59,26 +60,17 @@ export function detectEditorInstructions(files: WorkspaceFile[]): EditorInstruct
   const found: EditorInstruction[] = [];
   for (const { path, content } of files) {
     if (path.toLowerCase().endsWith('.razor')) found.push(...razorInstructions(path, content));
-    else if (path.toLowerCase().endsWith('.tsx')) {
+    else if (/\.(tsx|ts|jsx|js)$/i.test(path)) {
       try {
-        const ast = parse(content, { sourceType: 'module', plugins: ['typescript', 'jsx'], attachComment: false });
-        const containers: Array<{ start: number; end: number }> = [];
-        const nodes: unknown[] = [ast.program];
-        while (nodes.length) {
-          const node = nodes.pop();
-          if (!node || typeof node !== 'object') continue;
-          if (Array.isArray(node)) { nodes.push(...node); continue; }
-          const value = node as Record<string, unknown>;
-          if (value.type === 'JSXEmptyExpression' && typeof value.start === 'number' && typeof value.end === 'number') containers.push({ start: value.start, end: value.end });
-          for (const [key, child] of Object.entries(value)) if (!['loc', 'leadingComments', 'trailingComments', 'innerComments'].includes(key) && typeof child === 'object') nodes.push(child);
-        }
+        // .ts files must not use the JSX plugin: `<T>value` casts would misparse.
+        const plugins: Array<'typescript' | 'jsx'> = /\.ts$/i.test(path) ? ['typescript'] : /\.js$/i.test(path) ? ['jsx'] : /\.jsx$/i.test(path) ? ['jsx'] : ['typescript', 'jsx'];
+        const ast = parse(content, { sourceType: 'module', plugins, attachComment: false });
         for (const comment of ast.comments ?? []) {
-          // Babel verifies these are actual comments, not strings, templates or regular expressions.
-          if (comment.type !== 'CommentBlock' || comment.start == null || comment.end == null) continue;
-          if (!containers.some(node => node.start <= comment.start! && node.end >= comment.end!)) continue;
+          // Babel verifies these are actual comments (JSX `{/* */}`, `/* */` or `//`), not strings, templates or regexes.
+          if (comment.start == null) continue;
           found.push(...instruction(path, content, comment.value, comment.start));
         }
-      } catch { /* Incomplete/invalid TSX is never an executable instruction. */ }
+      } catch { /* Incomplete/invalid source is never an executable instruction. */ }
     }
   }
   // Identical markers are ambiguous; neither one executes automatically.

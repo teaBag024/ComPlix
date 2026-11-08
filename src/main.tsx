@@ -24,7 +24,8 @@ function App() {
     const renew = () => {
       // Spacetime authenticates with the ID token, which can expire before
       // the access token used by the library's default renewal timer.
-      if (running || Date.now() < retryAfter || Date.now() < expiresAt * 1000 - 120000) return;
+      // Five minutes of margin: browsers throttle timers in background tabs to about once a minute.
+      if (running || Date.now() < retryAfter || Date.now() < expiresAt * 1000 - 300000) return;
       running = true;
       retryAfter = Date.now() + 15000;
       void auth.signinSilent().catch(() => {

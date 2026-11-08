@@ -471,3 +471,19 @@ Owner authorized implementation and explicitly chose automatic execution after t
 ## Editor instruction receipt acknowledgment - November 8, 2026
 
 Owner requested a visible acknowledgment when an @complix instruction is detected. On successful backend acceptance, persist one system message in component chat quoting the instruction and file location before provider calls. The message confirms receipt by ComPlix and explains that Nemotron handles code changes; it is not a fabricated model response and adds no provider call. Rejected requests produce no receipt acknowledgment.
+
+## Editor instruction reliability - November 8, 2026
+
+Owner report: an `@complix` comment was neither picked up nor acknowledged.
+
+**Root causes:**
+- **Narrow comment rule:** only JSX `{/* */}` comments counted.
+- **One failed save stopped everything:** the local server log showed repeated "Your session expired" rejections of `save_component_draft` and no `run_editor_instruction` calls at all. The instruction pipeline only starts after a successful save, and one failed save stopped autosave until a manual retry.
+
+**Changes (owner-directed fix; behaviour changes noted):**
+- **Wider comment rule:** any real comment that *starts* with `@complix` now counts in `.tsx/.ts/.jsx/.js` (line, block or JSX comment), as does a Razor HTML comment. Babel still excludes strings, template literals and regexes, and comments that only mention the marker later stay inactive.
+- **Seamless renewal:** SpacetimeAuth ID tokens last 15 minutes. Renewal now starts 5 minutes before expiry (was 2), and the workspace swaps to the renewed connection only after it is subscribed, instead of resetting the workspace and unmounting the editor.
+- **Waiting saves:** draft saves rejected for an expired session or a lost connection keep local edits, show "Waiting to save…" and retry automatically on the next connection. Conflicts still require a decision.
+- **Instruction retry:** a run rejected for those reasons retries on the next connection. The server does not mark it blocked, because its own session check fails first.
+
+**Unchanged:** the per-mutation expiry check on the server.
